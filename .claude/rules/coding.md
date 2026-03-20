@@ -32,6 +32,15 @@
 - TTS: react-native-tts or expo-speech
 - Vibration: React Native Vibration API
 
+## No Over-Engineering
+- Do not create wrapper functions for single-use logic
+- Do not build generic utility classes "for reuse"
+- Do not add abstraction layers before there is duplication
+- Do not create separate config files for things used once
+- Do not introduce design patterns (factory, observer, etc.) unless clearly needed
+- If you're writing more infrastructure than feature code, stop
+- Rule of three: only abstract after the same pattern appears 3+ times
+
 ## What NOT to Do
 - Do not create unused abstractions
 - Do not build "just in case" architecture
