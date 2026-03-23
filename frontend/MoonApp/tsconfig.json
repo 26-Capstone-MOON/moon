@@ -1,6 +1,18 @@
 {
-  "extends": "@react-native/typescript-config",
   "compilerOptions": {
+    "target": "esnext",
+    "module": "esnext",
+    "lib": ["es2019", "es2020", "es2021", "es2022"],
+    "jsx": "react-native",
+    "strict": true,
+    "moduleResolution": "bundler",
+    "allowJs": true,
+    "noEmit": true,
+    "isolatedModules": true,
+    "allowSyntheticDefaultImports": true,
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "skipLibCheck": true,
     "types": ["jest"]
   },
   "include": ["**/*.ts", "**/*.tsx"],
