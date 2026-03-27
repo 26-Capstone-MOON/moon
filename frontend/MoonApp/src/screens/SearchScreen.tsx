@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -23,29 +23,55 @@ export default function SearchScreen({ navigation, route }: Props) {
   const [results, setResults] = useState<SearchResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [searched, setSearched] = useState(false);
+  const inputRef = useRef<TextInput>(null);
 
-  useEffect(() => {
-    if (query.length < 2) {
+  // Manual focus after mount (autoFocus breaks Korean IME on Android)
+  const handleLayout = () => {
+    setTimeout(() => inputRef.current?.focus(), 100);
+  };
+
+  const doSearch = async (text: string) => {
+    const trimmed = text.trim();
+    if (trimmed.length < 1) {
       setResults([]);
       setSearched(false);
       return;
     }
+    setLoading(true);
+    try {
+      const data = await searchPlaces(trimmed);
+      setResults(data);
+    } catch (e) {
+      console.warn('Search error:', e);
+      setResults([]);
+    } finally {
+      setLoading(false);
+      setSearched(true);
+    }
+  };
 
-    const timer = setTimeout(async () => {
-      setLoading(true);
-      try {
-        const data = await searchPlaces(query);
-        setResults(data);
-      } catch {
-        setResults([]);
-      } finally {
-        setLoading(false);
-        setSearched(true);
-      }
-    }, 300);
-
-    return () => clearTimeout(timer);
+  // Auto-search as user types (800ms debounce for Korean IME)
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (query.trim().length < 2) {
+      setResults([]);
+      setSearched(false);
+      return;
+    }
+    if (timerRef.current) { clearTimeout(timerRef.current); }
+    timerRef.current = setTimeout(() => {
+      doSearch(query);
+    }, 800);
+    return () => {
+      if (timerRef.current) { clearTimeout(timerRef.current); }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [query]);
+
+  const handleSubmit = () => {
+    if (timerRef.current) { clearTimeout(timerRef.current); }
+    doSearch(query);
+  };
 
   const handleSelect = (item: SearchResult) => {
     navigation.navigate('Home', {
@@ -92,7 +118,7 @@ export default function SearchScreen({ navigation, route }: Props) {
   return (
     <SafeAreaView style={styles.safe}>
       {/* Search Bar */}
-      <View style={styles.searchBarRow}>
+      <View style={styles.searchBarRow} onLayout={handleLayout}>
         <TouchableOpacity
           onPress={() => navigation.goBack()}
           hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
@@ -101,22 +127,31 @@ export default function SearchScreen({ navigation, route }: Props) {
 
         <View style={styles.inputContainer}>
           <TextInput
+            ref={inputRef}
             style={styles.input}
             placeholder={type === 'departure' ? '출발지 검색' : '도착지 검색'}
             placeholderTextColor="#AAAAAA"
             value={query}
             onChangeText={setQuery}
-            autoFocus
+            onSubmitEditing={handleSubmit}
             returnKeyType="search"
           />
           {query.length > 0 && (
             <TouchableOpacity
-              onPress={() => setQuery('')}
+              onPress={() => {
+                setQuery('');
+                setResults([]);
+                setSearched(false);
+              }}
               hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-              <Icon name="close-circle-outline" size={18} color="#AAAAAA" />
+              <Icon name="close-circle" size={18} color="#AAAAAA" />
             </TouchableOpacity>
           )}
         </View>
+
+        <TouchableOpacity onPress={handleSubmit} style={styles.searchIconButton}>
+          <Icon name="search" size={22} color={COLORS.primary} />
+        </TouchableOpacity>
       </View>
 
       {/* Results */}
@@ -157,6 +192,9 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: COLORS.text,
     padding: 0,
+  },
+  searchIconButton: {
+    padding: 8,
   },
   resultItem: {
     flexDirection: 'row',

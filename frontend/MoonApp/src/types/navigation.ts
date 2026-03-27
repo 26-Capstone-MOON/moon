@@ -14,6 +14,8 @@ export interface SearchResult {
   lng: number;
 }
 
+import type { DecisionPoint } from './route';
+
 export interface DPItem {
   dp_id: string;
   lat: number;
@@ -35,6 +37,6 @@ export type RootStackParamList = {
   Home: { selectedPlace?: Place; selectionType?: 'departure' | 'destination' } | undefined;
   Search: { type: 'departure' | 'destination' };
   RouteConfirm: { departure: Place; destination: Place };
-  Navigation: { departure: Place; destination: Place; dpList: DPItem[] };
+  Navigation: { departure: Place; destination: Place; dpList: DecisionPoint[] };
   Progress: undefined;
 };

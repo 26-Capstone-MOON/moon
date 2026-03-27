@@ -14,20 +14,35 @@ interface KakaoResponse {
 }
 
 export async function searchPlaces(query: string): Promise<SearchResult[]> {
-  const response = await fetch(
-    `https://dapi.kakao.com/v2/local/search/keyword.json?query=${encodeURIComponent(query)}&page=1&size=15`,
-    {
-      headers: {
-        Authorization: `KakaoAK ${KAKAO_REST_API_KEY}`,
-      },
-    },
-  );
+  const url = `https://dapi.kakao.com/v2/local/search/keyword.json?query=${encodeURIComponent(query)}&page=1&size=15`;
+  const headers = {
+    Authorization: `KakaoAK ${KAKAO_REST_API_KEY}`,
+  };
 
-  if (!response.ok) {
-    throw new Error(`Search failed: ${response.status}`);
+  console.log('[SearchService] REQUEST URL:', url);
+  console.log('[SearchService] HEADERS:', JSON.stringify(headers));
+  console.log('[SearchService] API_KEY:', KAKAO_REST_API_KEY ? `${KAKAO_REST_API_KEY.substring(0, 6)}...` : 'EMPTY!');
+
+  let response: Response;
+  try {
+    response = await fetch(url, { headers });
+  } catch (e) {
+    console.error('[SearchService] NETWORK ERROR:', e);
+    throw e;
   }
 
-  const data: KakaoResponse = await response.json();
+  console.log('[SearchService] STATUS:', response.status, response.statusText);
+
+  const rawText = await response.text();
+  console.log('[SearchService] RAW RESPONSE:', rawText.substring(0, 500));
+
+  if (!response.ok) {
+    console.error('[SearchService] FAILED:', response.status, rawText);
+    throw new Error(`Search failed: ${response.status} - ${rawText}`);
+  }
+
+  const data: KakaoResponse = JSON.parse(rawText);
+  console.log('[SearchService] RESULTS:', data.documents.length, '건');
 
   return data.documents.map((doc) => ({
     name: doc.place_name,

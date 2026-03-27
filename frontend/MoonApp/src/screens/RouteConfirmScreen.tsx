@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   ScrollView,
   StyleSheet,
@@ -8,41 +8,48 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/Ionicons';
+import { NaverMapView, NaverMapMarkerOverlay } from '@mj-studio/react-native-naver-map';
 import type { StackScreenProps } from '@react-navigation/stack';
 import { COLORS } from '../constants/colors';
-import { getRoute } from '../services/routeService';
-import type { DPItem, RootStackParamList, RouteInfo } from '../types/navigation';
+import { fetchRoute } from '../services/routeService';
+import type { RootStackParamList } from '../types/navigation';
+import type { RouteData, DecisionPoint } from '../types/route';
+import { formatDistance } from '../utils/formatDistance';
+import { formatTime } from '../utils/formatTime';
 
 type Props = StackScreenProps<RootStackParamList, 'RouteConfirm'>;
 
 export default function RouteConfirmScreen({ navigation, route }: Props) {
   const { departure, destination } = route.params;
-  const [dpList, setDpList] = useState<DPItem[]>([]);
-  const [routeInfo, setRouteInfo] = useState<RouteInfo | null>(null);
+  const [routeData, setRouteData] = useState<RouteData | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
-    async function fetchRoute() {
+    async function loadRoute() {
       setIsLoading(true);
       try {
-        const data = await getRoute(departure, destination);
-        setDpList(data.dpList);
-        setRouteInfo(data.routeInfo);
+        const data = await fetchRoute(departure, destination);
+        setRouteData(data);
       } catch {
         // fallback: keep empty
       } finally {
         setIsLoading(false);
       }
     }
-    fetchRoute();
+    loadRoute();
   }, [departure, destination]);
+
+  const dpList = routeData?.decisionPoints ?? [];
 
   const handleStart = () => {
     navigation.navigate('Navigation', { departure, destination, dpList });
   };
 
-  const formatInfo = (value: number | undefined, unit: string) =>
-    value != null && value > 0 ? `${value} ${unit}` : `-- ${unit}`;
+  const mapCamera = useMemo(() => ({
+    latitude: (departure.lat + destination.lat) / 2,
+    longitude: (departure.lng + destination.lng) / 2,
+    zoom: 14,
+  }), [departure, destination]);
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -66,17 +73,35 @@ export default function RouteConfirmScreen({ navigation, route }: Props) {
         <Text style={styles.destName}>{destination.name}</Text>
 
         <View style={styles.infoTagRow}>
-          <Text style={styles.infoTag}>{formatInfo(routeInfo?.totalTime, '분')}</Text>
+          <Text style={styles.infoTag}>{routeData ? formatTime(routeData.totalTime) : '--분'}</Text>
           <Text style={styles.infoDivider}>|</Text>
-          <Text style={styles.infoTag}>{formatInfo(routeInfo?.totalDistance, 'm')}</Text>
-          <Text style={styles.infoDivider}>|</Text>
-          <Text style={styles.infoTag}>{formatInfo(routeInfo?.totalSteps, '걸음')}</Text>
+          <Text style={styles.infoTag}>{routeData ? formatDistance(routeData.totalDistance) : '--m'}</Text>
         </View>
 
-        {/* Mini Map Placeholder */}
-        <View style={styles.mapPlaceholder}>
-          <Icon name="map-outline" size={32} color="#BBBBBB" />
-          <Text style={styles.mapPlaceholderText}>지도 로딩 중...</Text>
+        {/* Naver Map */}
+        <View style={styles.mapContainer}>
+          <NaverMapView
+            style={styles.map}
+            initialCamera={mapCamera}
+            isShowCompass
+            isShowZoomControls={false}
+            isShowLocationButton={false}
+          >
+            <NaverMapMarkerOverlay
+              latitude={departure.lat}
+              longitude={departure.lng}
+              width={24}
+              height={24}
+              caption={{ text: '출발', textSize: 12, color: '#34C759' }}
+            />
+            <NaverMapMarkerOverlay
+              latitude={destination.lat}
+              longitude={destination.lng}
+              width={24}
+              height={24}
+              caption={{ text: '도착', textSize: 12, color: '#FF3B30' }}
+            />
+          </NaverMapView>
         </View>
 
         {/* DP Timeline */}
@@ -94,7 +119,7 @@ export default function RouteConfirmScreen({ navigation, route }: Props) {
             <TimelineNode
               icon="ellipse"
               iconColor={COLORS.primary}
-              label={isLoading ? '경로 정보를 불러오는 중...' : '경로 정보를 불러오는 중...'}
+              label={isLoading ? '경로 정보를 불러오는 중...' : '경로 정보 없음'}
               sub=""
               showLine
               faded
@@ -102,11 +127,10 @@ export default function RouteConfirmScreen({ navigation, route }: Props) {
           ) : (
             dpList.map((dp, index) => (
               <TimelineNode
-                key={dp.dp_id}
+                key={dp.dpId}
                 number={index + 1}
-                label={dp.description || '안내 정보 로딩 중...'}
-                sub={dp.landmark_name || ''}
-                distance={dp.distance_to_next > 0 ? `${dp.distance_to_next} m 이동` : undefined}
+                label={dp.guideText || '안내 정보 로딩 중...'}
+                sub={dp.landmarks[0]?.name || ''}
                 showLine={index < dpList.length - 1}
               />
             ))
@@ -220,19 +244,15 @@ const styles = StyleSheet.create({
     color: '#DDDDDD',
   },
 
-  // Map Placeholder
-  mapPlaceholder: {
-    height: 200,
+  // Map
+  mapContainer: {
+    height: 220,
     borderRadius: 12,
-    backgroundColor: '#F0F0F0',
-    justifyContent: 'center',
-    alignItems: 'center',
+    overflow: 'hidden',
     marginTop: 20,
-    gap: 8,
   },
-  mapPlaceholderText: {
-    fontSize: 13,
-    color: '#BBBBBB',
+  map: {
+    flex: 1,
   },
 
   // Timeline

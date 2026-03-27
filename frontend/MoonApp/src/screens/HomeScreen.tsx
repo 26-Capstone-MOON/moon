@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   Alert,
   ScrollView,
@@ -8,17 +8,41 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import Icon from 'react-native-vector-icons/Ionicons';
 import type { StackScreenProps } from '@react-navigation/stack';
 import { COLORS } from '../constants/colors';
 import type { Place, RootStackParamList } from '../types/navigation';
+
+const RECENT_PLACES_KEY = '@moon_recent_places';
+const MAX_RECENT = 10;
 
 type Props = StackScreenProps<RootStackParamList, 'Home'>;
 
 export default function HomeScreen({ navigation, route }: Props) {
   const [departure, setDeparture] = useState<Place | null>(null);
   const [destination, setDestination] = useState<Place | null>(null);
-  const [recentPlaces] = useState<Place[]>([]);
+  const [recentPlaces, setRecentPlaces] = useState<Place[]>([]);
+
+  // Load recent places from AsyncStorage
+  useEffect(() => {
+    AsyncStorage.getItem(RECENT_PLACES_KEY).then(json => {
+      if (json) {
+        setRecentPlaces(JSON.parse(json));
+      }
+    });
+  }, []);
+
+  const addRecentPlace = useCallback(async (place: Place) => {
+    const json = await AsyncStorage.getItem(RECENT_PLACES_KEY);
+    const current: Place[] = json ? JSON.parse(json) : [];
+    const filtered = current.filter(
+      p => p.lat !== place.lat || p.lng !== place.lng,
+    );
+    const updated = [place, ...filtered].slice(0, MAX_RECENT);
+    await AsyncStorage.setItem(RECENT_PLACES_KEY, JSON.stringify(updated));
+    setRecentPlaces(updated);
+  }, []);
 
   useEffect(() => {
     const params = route.params;
@@ -32,17 +56,29 @@ export default function HomeScreen({ navigation, route }: Props) {
     }
   }, [route.params, navigation]);
 
-  const canStart = departure !== null && destination !== null;
+  const canSearch = departure !== null && destination !== null;
 
-  const handleStart = () => {
+  const handleSearch = () => {
     if (departure && destination) {
+      addRecentPlace(destination);
       navigation.navigate('RouteConfirm', { departure, destination });
     }
+  };
+
+  const handleSwap = () => {
+    setDeparture(destination);
+    setDestination(departure);
+  };
+
+  const handleReset = () => {
+    setDeparture(null);
+    setDestination(null);
   };
 
   const handleRecentPlace = (place: Place) => {
     setDestination(place);
     if (departure) {
+      addRecentPlace(place);
       navigation.navigate('RouteConfirm', { departure, destination: place });
     }
   };
@@ -66,46 +102,54 @@ export default function HomeScreen({ navigation, route }: Props) {
 
         {/* Search Card */}
         <View style={styles.searchCard}>
-          <TouchableOpacity
-            style={styles.searchRow}
-            onPress={() => navigation.navigate('Search', { type: 'departure' })}>
-            <View style={[styles.dot, { backgroundColor: COLORS.primary }]} />
-            <Text style={[styles.searchText, departure && styles.searchTextFilled]}>
-              {departure ? departure.name : '현재 위치'}
-            </Text>
-          </TouchableOpacity>
+          <View style={styles.inputArea}>
+            <View style={styles.inputFields}>
+              <TouchableOpacity
+                style={styles.inputRow}
+                onPress={() => navigation.navigate('Search', { type: 'departure' })}>
+                <Icon name="ellipse" size={8} color={COLORS.primary} style={styles.inputDot} />
+                <Text style={departure ? styles.inputTextFilled : styles.inputTextPlaceholder}>
+                  {departure ? departure.name : '출발지 입력'}
+                </Text>
+              </TouchableOpacity>
 
-          <View style={styles.dashedLineContainer}>
-            <View style={styles.dashedLine} />
+              <View style={styles.divider} />
+
+              <TouchableOpacity
+                style={styles.inputRow}
+                onPress={() => navigation.navigate('Search', { type: 'destination' })}>
+                <Icon name="ellipse" size={8} color={COLORS.accent} style={styles.inputDot} />
+                <Text style={destination ? styles.inputTextFilled : styles.inputTextPlaceholder}>
+                  {destination ? destination.name : '도착지 입력'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            <TouchableOpacity style={styles.swapButton} onPress={handleSwap}>
+              <Icon name="swap-vertical-outline" size={20} color={COLORS.subtext} />
+            </TouchableOpacity>
           </View>
 
-          <TouchableOpacity
-            style={styles.searchRow}
-            onPress={() => navigation.navigate('Search', { type: 'destination' })}>
-            <View style={[styles.dot, { backgroundColor: '#FF4444' }]} />
-            <View style={styles.destinationRow}>
-              <Text
-                style={[
-                  styles.searchText,
-                  !destination && styles.placeholder,
-                  destination && styles.searchTextFilled,
-                ]}>
-                {destination ? destination.name : '도착지를 입력하세요'}
+          <View style={styles.cardActions}>
+            <TouchableOpacity style={styles.resetButton} onPress={handleReset}>
+              <Icon name="refresh-outline" size={16} color={COLORS.subtext} />
+              <Text style={styles.resetText}>다시입력</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.searchButton, !canSearch && styles.searchButtonDisabled]}
+              onPress={handleSearch}
+              disabled={!canSearch}>
+              <Text style={[styles.searchButtonText, !canSearch && styles.searchButtonTextDisabled]}>
+                길찾기
               </Text>
-              {destination ? (
-                <TouchableOpacity
-                  onPress={(e) => {
-                    e.stopPropagation();
-                    setDestination(null);
-                  }}
-                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-                  <Icon name="close-circle-outline" size={20} color="#AAAAAA" />
-                </TouchableOpacity>
-              ) : (
-                <Icon name="mic-outline" size={20} color="#AAAAAA" />
-              )}
-            </View>
-          </TouchableOpacity>
+              <Icon
+                name="chevron-forward"
+                size={16}
+                color={canSearch ? '#FFFFFF' : '#AAAAAA'}
+              />
+            </TouchableOpacity>
+          </View>
         </View>
 
         {/* Shortcut Cards */}
@@ -123,7 +167,7 @@ export default function HomeScreen({ navigation, route }: Props) {
             style={[styles.shortcutCard, { backgroundColor: '#FFF0EB' }]}
             onPress={() => Alert.alert('길을 잃었다면', '추후 구현')}>
             <View style={styles.alertIcon}>
-              <Icon name="warning" size={16} color="#FFFFFF" />
+              <Icon name="alert" size={16} color="#FFFFFF" />
             </View>
             <Text style={styles.shortcutLabel}>길을 잃었다면</Text>
             <Text style={styles.shortcutTitle}>잃어버렸어요</Text>
@@ -142,7 +186,7 @@ export default function HomeScreen({ navigation, route }: Props) {
           ) : (
             recentPlaces.map((place, index) => (
               <TouchableOpacity
-                key={`${place.name}-${index}`}
+                key={`${place.lat}-${place.lng}-${index}`}
                 style={[
                   styles.recentItem,
                   index < recentPlaces.length - 1 && styles.recentItemBorder,
@@ -161,15 +205,6 @@ export default function HomeScreen({ navigation, route }: Props) {
           )}
         </View>
       </ScrollView>
-
-      {/* Start Button */}
-      {canStart && (
-        <View style={styles.startButtonContainer}>
-          <TouchableOpacity style={styles.startButton} onPress={handleStart}>
-            <Text style={styles.startButtonText}>네, 안내를 시작할까요?</Text>
-          </TouchableOpacity>
-        </View>
-      )}
     </SafeAreaView>
   );
 }
@@ -184,7 +219,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingHorizontal: 20,
-    paddingBottom: 100,
+    paddingBottom: 40,
   },
   header: {
     flexDirection: 'row',
@@ -214,8 +249,6 @@ const styles = StyleSheet.create({
   searchCard: {
     backgroundColor: COLORS.background,
     borderRadius: 16,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
     marginTop: 20,
     elevation: 3,
     shadowColor: '#000',
@@ -223,46 +256,84 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 8,
   },
-  searchRow: {
+  inputArea: {
     flexDirection: 'row',
     alignItems: 'center',
+  },
+  inputFields: {
+    flex: 1,
+  },
+  inputRow: {
+    height: 48,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingLeft: 16,
+    paddingRight: 8,
+  },
+  inputDot: {
+    marginRight: 10,
+  },
+  inputTextPlaceholder: {
+    fontSize: 15,
+    color: '#AAAAAA',
+    flex: 1,
+  },
+  inputTextFilled: {
+    fontSize: 15,
+    color: '#333333',
+    fontWeight: '500',
+    flex: 1,
+  },
+  divider: {
+    height: 1,
+    backgroundColor: '#EEEEEE',
+    marginLeft: 16,
+  },
+  swapButton: {
+    width: 48,
+    height: 96,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderLeftWidth: 1,
+    borderLeftColor: '#EEEEEE',
+  },
+  cardActions: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    borderTopWidth: 1,
+    borderTopColor: '#EEEEEE',
+    paddingHorizontal: 16,
     paddingVertical: 10,
   },
-  dot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    marginRight: 12,
-  },
-  searchText: {
-    fontSize: 14,
-    color: COLORS.text,
-    flex: 1,
-  },
-  searchTextFilled: {
-    color: COLORS.text,
-    fontWeight: '500',
-  },
-  placeholder: {
-    color: '#AAAAAA',
-  },
-  destinationRow: {
-    flex: 1,
+  resetButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    gap: 4,
   },
-  dashedLineContainer: {
-    paddingLeft: 3,
-    height: 16,
-    justifyContent: 'center',
+  resetText: {
+    fontSize: 14,
+    color: COLORS.subtext,
   },
-  dashedLine: {
-    width: 0,
-    height: 16,
-    borderLeftWidth: 1.5,
-    borderStyle: 'dashed',
-    borderColor: '#CCCCCC',
+  searchButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.primary,
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    borderRadius: 8,
+    gap: 2,
+  },
+  searchButtonDisabled: {
+    backgroundColor: '#E5E5E5',
+  },
+  searchButtonText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  searchButtonTextDisabled: {
+    color: '#AAAAAA',
   },
 
   // Shortcut Cards
@@ -343,27 +414,5 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: COLORS.subtext,
     marginTop: 2,
-  },
-
-  // Start Button
-  startButtonContainer: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    paddingHorizontal: 20,
-    paddingBottom: 24,
-    backgroundColor: COLORS.background,
-  },
-  startButton: {
-    backgroundColor: COLORS.primary,
-    paddingVertical: 16,
-    borderRadius: 12,
-    alignItems: 'center',
-  },
-  startButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: 'bold',
   },
 });
