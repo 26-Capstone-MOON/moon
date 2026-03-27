@@ -2,347 +2,231 @@
 ## 1. Project Overview
 
 Landmark-based spatial description pedestrian navigation system.
-**지형지물 기반 공간 설명 길 안내 시스템**
 
 The goal is NOT to eliminate the map.
 The goal is to **reduce screen dependency** by adding multiple guidance channels
 so users can navigate even when they can't actively watch the screen.
 
-### Core Channels (multi-channel guidance)
-
-| Channel | Role | When Used |
-|---|---|---|
-| **Map + location** | Route polyline + current position on map | Always visible (base layer) |
-| **Spatial description** | Landmark-based text instruction | Always (primary guidance) |
-| **Voice (TTS)** | Spoken guidance | Always (primary guidance) |
-| **Haptic (vibration)** | Directional vibration patterns | DP approach + direction change |
-| **Panorama view** | Street view image of next DP | Always visible (supplementary) |
-
-The map is always visible as the base layer — like existing navigation apps.
-What we ADD on top: spatial description, voice, haptic, and panorama.
-The user can navigate by listening + feeling vibration alone,
-but the map is always there when they glance at the screen.
+Guidance channels: map (base layer) + spatial description + voice TTS + haptic vibration + panorama view.
 
 ---
 
-## 2. Target Scenario
-
-NOT only for "both hands occupied" situations.
-Designed to be **universally useful** for any pedestrian:
-
-**High restriction:**
-- Holding an umbrella
-- Carrying heavy bags with both hands
-- Pushing a stroller
-
-**Medium restriction:**
-- Walking in crowded areas
-- Rainy/snowy weather
-- Running or fast walking
-
-**Low restriction (still beneficial):**
-- Unfamiliar area (spatial descriptions more intuitive than map lines)
-- Elderly users (prefer voice over complex map UI)
-- General walking (reduce cognitive load from constant screen checking)
-
----
-
-## 3. What We're Solving
-
-### Problem with existing navigation
-- Relies on: 2D map + route line + distance numbers
-- User must: constantly look at screen → match position → interpret direction
-- Causes: cognitive load, attention split, missed turns, safety issues
-- No real-time voice guidance for walking (unlike car navigation)
-- No automatic re-routing when walking off-path
-
-### Our approach
-- **Spatial description**: "노란 건물 스타벅스에서 우회전"
-- **Voice guidance**: TTS reads instruction before each DP
-- **Haptic feedback**: vibration pattern indicates upcoming turn
-- **Panorama preview**: see what the next DP looks like (optional)
-- **Map as background**: route overview still available
-- **Auto re-route**: detect off-route and regenerate guidance
-
----
-
-## 4. Core Concept
+## 2. Core Concept
 
 Navigation is based on **Decision Points (DP)**.
 
 At each DP, the backend:
-1. Selects the best landmark nearby
-2. Generates a spatial description
-3. Sends guidance text to frontend
+1. Selects the best landmark via scoring model: `S_final = P(h) × (D(w) + U + C_bonus)`
+2. Generates spatial description guidance per DP type
+3. Sends complete guidance package to frontend
 
-Frontend then:
-1. Shows the instruction
-2. Speaks it (TTS)
-3. Vibrates (haptic)
-4. Optionally shows panorama of the DP location
-
-Example:
-"스타벅스를 지나서 우회전하세요. 94m 직진 후 횡단보도를 건너세요."
+DP types: Direction change (3-step), Crosswalk (before+after), Virtual (confirmation), Vertical move (fixed+POI).
+See `domain.md` for detailed guidance patterns and examples.
 
 **Frontend does NOT select landmarks or generate guidance.**
 Backend decides everything. Frontend renders and executes.
 
 ---
 
-## 5. Tech Stack
+## 3. Architecture
 
-**Frontend:** React Native (Android-first), TypeScript
-**Backend:** Spring Boot (main server) + FastAPI (AI/scoring pipeline)
+### Monorepo structure
+```
+MOON/
+├── frontend/       React Native + Android Studio, TypeScript
+├── backend/        Spring Boot 3 + Java 17 — API Gateway (no business logic)
+├── services/       Python FastAPI — core pipeline + deviation detection
+│   ├── dp-pipeline/   (port 8000) route creation pipeline STEP 1~6
+│   └── deviation/     (port 8001) off-route detection + rerouting
+├── docs/           Design docs, API spec, screen specs
+└── .claude/rules/  coding.md, domain.md, output.md, workflow.md
+```
 
-**Planned APIs (not all needed for MVP):**
-- Tmap Pedestrian Route API — route + DP extraction
-- Kakao Local API — POI search around DPs
-- Naver Panorama API — street view images (supplementary)
-- Naver Map SDK — map rendering (background)
-- Google Places API — business hours (isOpen)
-- OpenAI Vision API — panorama image analysis
-- OpenAI LLM API — guidance text generation
-- Weather API — environment adjustment for scoring
+### Request flow
+```
+[React Native App]
+    |
+    |  REST API (JSON) / WebSocket
+    v
+[Spring Boot]  ── API Gateway (Jihyun)
+    |
+    |  Internal HTTP calls
+    v
+[Python FastAPI]  ── Core logic (Hyewon)
+    |
+    +-- dp-pipeline  → route pipeline STEP 1~6 + external APIs
+    +-- deviation    → off-route detection logic
+```
 
-**Device APIs:**
-- Android TTS, Vibration API, Fused Location Provider
+**Spring Boot does NOT execute business logic.** It receives requests from the app, forwards to Python services, and returns Python's response to the app.
 
-**Cache:** Redis (optional)
+### Role assignment
 
-Start with mock data. Integrate real APIs incrementally.
+| Layer | Owner | Role |
+|---|---|---|
+| React Native | Minwoo | UI, GPS collection, TTS/STT, Naver Panorama capture |
+| Spring Boot | Jihyun | REST API / WebSocket endpoints, Python service relay |
+| Python dp-pipeline | Hyewon | Route creation, DP extraction, POI, scoring, guidance generation |
+| Python deviation | Hyewon | Off-route detection (speed→distance→duration→continuity) |
+
+### Commands
+
+**Frontend:**
+```bash
+cd frontend
+npm install
+npx react-native run-android
+npx react-native start
+```
+
+**Backend (Spring Boot):**
+```bash
+cd backend
+./gradlew bootRun                    # port 8080
+./gradlew build
+./gradlew test
+```
+
+**Python services (Hyewon):**
+```bash
+cd services/dp-pipeline && uvicorn main:app --port 8000
+cd services/deviation && uvicorn main:app --port 8001
+```
 
 ---
 
-## 6. Team
-
-- **Minwoo (오민우)** — React Native frontend, UI/UX, TTS/haptic, location
-- **Jihyun (김지현)** — Spring Boot backend, route handling, API orchestration
-- **Hyewon (홍혜원)** — FastAPI AI pipeline, scoring model, Vision/LLM
-
----
-
-## 7. Frontend Role
+## 4. Frontend Role
 
 ### DOES:
-- Render guidance text (spatial description)
-- Play TTS (voice)
-- Trigger haptic feedback (vibration)
-- Show panorama image (on-demand, supplementary)
-- Show map with route (background, supplementary)
-- Manage DP progression
-- Detect basic off-route state
+- Render guidance text, play TTS (Mode A: auto / Mode B: conversational)
+- Trigger haptic feedback
+- Show panorama (execute Naver Panorama using server's panoramaRequest data)
+- Show map with route polyline
+- Connect WebSocket `/tracking` and send GPS every 1s
+- Process server trigger responses (PRE_ALERT, ARRIVAL, DEVIATION_WARNING, etc.)
+- Upload panorama Vision results via `POST /route/{routeId}/panorama-results`
 
 ### MUST NOT:
-- Calculate routes
-- Select landmarks
-- Perform scoring
-- Generate guidance text
-
-Backend provides the complete instruction. Frontend executes it.
+- Calculate routes, select landmarks, perform scoring, generate guidance text
+- Detect route deviation (server handles via WebSocket response)
 
 ---
 
-## 8. Backend Pipeline (Reference Only)
+## 5. Backend Pipeline (Reference Only)
 
-Frontend does not implement this. For context:
-```
-1. Tmap API → extract DPs (turnType filtering)
-2. Insert Virtual DPs on long straight segments (~200m)
-3. Parallel: Panorama image + POI data collection
-4. Vision API analyzes panorama → structured JSON
-5. Cross-validate Vision vs POI → score + select landmark
-6. LLM generates guidance sentence (does NOT pick landmark)
-7. Package as EnhancedRoute → cache → send to client
-```
-
-Key rules:
-- Scoring model selects landmark. LLM only writes the sentence.
-- MATCHED (Vision+POI) > POI_ONLY > VISION_ONLY
-- Fallback: no landmark → basic direction instruction
+Python dp-pipeline executes STEP 0~6 (Weather → DP extraction → Virtual DP → POI → Panorama → Scoring → Sequence optimization → Guidance → Cache). See `domain.md` for full details.
 
 ---
 
-## 9. Navigation Flow
+## 6. Navigation Flow (API-driven)
 ```
-1. User inputs destination (Home Screen)
-2. Backend generates route → DPs → guidance
-3. Frontend loads EnhancedRoute (or mock JSON for MVP)
-4. Navigation starts:
-   a. Show current DP instruction (text)
-   b. TTS speaks the instruction
-   c. Haptic vibrates on approach / direction change
-   d. Panorama available on-demand (tap to see)
-   e. Map shows position in background
-5. User progresses to next DP
-6. Repeat until destination
-7. If off-route → re-route → new DPs → new guidance
+1. POST /route → Spring Boot → Python dp-pipeline → RouteResponse
+2. Client executes panorama → Vision → POST /route/{routeId}/panorama-results
+3. Navigation loop (WebSocket):
+   - Client connects WebSocket /tracking
+   - Client sends GPS every 1s as JSON
+   - Spring Boot → Python deviation → response via WebSocket
+   - Client acts on trigger:
+     PRE_ALERT (30m) → TTS preAlert
+     ARRIVAL (10m)   → TTS primary + haptic
+     CONFIRMATION    → TTS confirmation (Virtual DP)
+     DEVIATION_WARNING → "Seems like you've gone off route"
+     REROUTING       → "Finding a new route, one moment"
+     RETURN_DETECTED → "You're coming back on track"
+4. Mode B: earphone → STT → POST /route/{routeId}/conversation → TTS
+5. Off-route → DEVIATION_CONFIRMED → POST /route/{routeId}/reroute → new route
+6. ARRIVED → done
 ```
 
 ---
 
-## 10. App Screens
+## 7. App Screens
 
-### Home Screen
-Layout (top to bottom):
-- **Header**: App name (MOON) + settings icon
-- **Greeting**: "안녕하세요" + "어디로 모실까요?"
-- **Search section**:
-  - 현재 위치 (auto-filled, blue dot)
-  - 도착지 입력 field + voice input icon (mic)
-- **Quick actions** (two cards, side by side):
-  - 바로가기 우리집 (saved home shortcut)
-  - 길을 잃었다면 → 잃어버렸어요 (re-route from current position)
-- **Recent destinations**:
-  - 최근에 간 곳 label
-  - List: name + address + distance (tappable → starts navigation)
-
-Behavior:
-- Destination input → route API (or mock) → NavigationScreen
-- 우리집 tap → instant navigation to saved home
-- 잃어버렸어요 tap → current GPS → re-route to last destination
-- Recent item tap → starts navigation to that place
-
-### Navigation Screen 
-Layout (top to bottom):
-- **Top bar**: direction indicator to next DP (arrow + label)
-- **Center (main area)**: Naver Map SDK
-  - Route polyline displayed
-  - User's current position marker (real-time)
-  - SDK built-in compass (rotates with map orientation)
-  - Looks like a normal map app at first glance
-- **Bottom card 1**: Panorama image (거리뷰) of next DP
-- **Bottom card 2**: Guidance text + speaker icon (tap to replay TTS)
-
-Key difference from existing map apps:
-- Map shows WHERE you are (same as existing apps)
-- Bottom cards show WHAT to do next (our addition)
-- TTS TELLS you what to do (our addition)
-- Haptic ALERTS you when to act (our addition)
-
-### Progress Screen (swipe from navigation)
-Layout:
-- **Top bar**: progress percentage (진행 상황 %)
-- **Right panel**:
-  - Current direction to next DP
-  - 구조 단서 설명 (structural cue description)
-  - Checkpoint list with ✓ marks for passed DPs (vertical scroll)
-- **Bottom**: Map SDK with route
-
-### Lock Screen Widget 
-Layout:
-- **Top**: current time
-- **Bottom**: compact compass + direction arrow + short guidance text
-
-### Off-Route Screen 
-- Same as Navigation Screen BUT:
-- Map area: **red overlay** + "경로를 이탈했습니다"
-- TTS announces off-route
-
-### Re-Route Screen 
-- Same as Navigation Screen BUT:
-- Map area: "다시 경로를 안내합니다"
-- New route polyline + new 거리뷰 + new guidance text loaded
-
-### Screen Flow
-```
-Home → Navigation 
-         ↕ swipe
-       Progress 
-
-Navigation → [off-route] → Off-Route 
-Off-Route → [re-route done] → Re-Route → Navigation
-```
+See `docs/screens.md` for screen specs (Home, RouteConfirm, Navigation, Progress, Off-Route).
 
 ---
 
-## 11. Key Types
+## 8. Key Types (API spec v0.1.0)
+
+### DecisionPoint (core type)
 ```ts
 interface DecisionPoint {
-  id: string;
-  coordinate: { lat: number; lng: number };
-  turnType: number;
-  category: string;
-  isVirtual: boolean;
-  guidanceText: string;
-  landmark?: {
-    name: string;
-    position: string;
-    matchStatus: string;
+  dpId: string;
+  dpType: 'DEPARTURE' | 'ARRIVAL' | 'DIRECTION_CHANGE' | 'CROSSWALK' | 'VERTICAL_MOVE' | 'VIRTUAL';
+  turnType: number | null;
+  location: { latitude: number; longitude: number };
+  distanceFromStart: number;
+  guidance: {
+    primary: string;
+    preAlert: string | null;
+    action: 'RIGHT_TURN' | 'LEFT_TURN' | 'U_TURN' | 'CROSSWALK' | 'STAIRS_UP' | 'STAIRS_DOWN' | 'OVERPASS' | 'UNDERPASS' | 'ELEVATOR' | null;
   };
-  panoramaUrl?: string;
-  distanceFromPrev: number;
-}
-
-interface EnhancedRoute {
-  routeId: string;
-  polyline: { lat: number; lng: number }[];
-  decisionPoints: DecisionPoint[];
-  totalDistance: number;
-  estimatedTime: number;
-}
-
-interface GuidanceState {
-  currentDPIndex: number;
-  nextDP: DecisionPoint | null;
-  distanceToNextDP: number;
-  isOffRoute: boolean;
-  isNavigating: boolean;
+  selectedLandmark: {
+    name: string; categoryCode: string; position: 'LEFT' | 'RIGHT' | 'FRONT';
+    distance: number; score: number; matchStatus: 'MATCHED' | 'POI_ONLY' | 'VISION_ONLY'; isOpen: boolean;
+  } | null;
+  panoramaRequest: {
+    location: { latitude: number; longitude: number };
+    directions: { pan: number; label: 'FRONT' | 'LEFT' | 'RIGHT'; isPrimary: boolean }[];
+  } | null;
 }
 ```
 
----
-
-## 12. API Endpoints (Backend)
+### WebSocket Tracking Response (navigation loop)
+```ts
+interface TrackingResponse {
+  navigationState: 'ON_ROUTE' | 'DEVIATION_SUSPECTED' | 'DEVIATION_WARNING' | 'DEVIATION_CONFIRMED' | 'RETURNING' | 'REROUTING' | 'ARRIVED';
+  currentDpId: string;
+  distanceToDp: number;
+  trigger: 'PRE_ALERT' | 'ARRIVAL' | 'CONFIRMATION' | 'DEVIATION_WARNING' | 'REROUTING' | 'RETURN_DETECTED' | null;
+  guidance: { primary: string; preAlert: string | null; action: string | null } | null;
+  progress: {
+    completedDps: string[]; currentDpId: string; remainingDps: string[];
+    distanceRemaining: number; timeRemaining: number;
+  };
+}
 ```
-POST  /api/route          → EnhancedRoute (origin, destination)
-GET   /api/route/:id      → cached route
-POST  /api/route/reroute  → re-route from current position
-```
+
+For full RouteResponse and ConversationResponse types, see API spec document.
 
 ---
 
-## 13. MVP Scope
+## 9. API Endpoints
 
-### Phase 1 (mock data only)
-- Home screen (search + quick actions + recent)
-- Navigation screen (guidance card + TTS + haptic)
-- Progress screen (checkpoint list)
-- Mock JSON route data
-- DP progression (manual or distance-based)
-- TTS on DP change
-- Basic haptic feedback
+**REST API**
 
-### Phase 2 (after Phase 1 works)
-- Real GPS location tracking
-- DP proximity trigger
-- Panorama image display
-- Off-route detection UI
-- Backend API integration
-- Map rendering (Naver Map SDK)
-- Lock screen widget
+| Method | Endpoint | Description |
+|---|---|---|
+| `POST` | `/route` | Create route (pipeline STEP 1~6) |
+| `GET` | `/route/{routeId}` | Get cached route |
+| `POST` | `/route/{routeId}/panorama-results` | Upload Vision results |
+| `POST` | `/route/{routeId}/reroute` | Re-route |
+| `POST` | `/route/{routeId}/conversation` | Mode B conversational |
 
-### NOT in MVP
-- 3D map, auth, AI chat, iOS, offline mode
+**WebSocket**
+
+| Endpoint | Description |
+|---|---|
+| `/tracking` | Real-time GPS tracking + guidance triggers + deviation detection |
+
+**Common response:** `{ "status": "SUCCESS"|"ERROR", "data"|"error": { ... } }`
+**Base URL:** `https://api.moon-app.dev/v1`
 
 ---
 
-## 14. Rules
+## 10. MVP Scope
+
+See `workflow.md` for phase details (F1~F3 frontend, B1~B5 backend, Python Day 1~8).
+**NOT in MVP**: 3D map, auth, iOS, offline mode.
+
+---
+
+## 11. Rules
 
 All detailed rules are in:
-- `.claude/rules/coding.md`
-- `.claude/rules/domain.md`
-- `.claude/rules/output.md`
-- `.claude/rules/workflow.md`
+- `.claude/rules/coding.md` — code conventions (frontend + backend + Python)
+- `.claude/rules/domain.md` — scoring, DP types, off-route detection
+- `.claude/rules/output.md` — code output format, mock data, fallback
+- `.claude/rules/workflow.md` — phases, priorities, sync timeline
 
 **These rules override general preferences.**
-
----
-
-## 15. Key Constraint
-
-This project is NOT about replacing the map.
-It is about **adding channels** — voice, haptic, spatial description, panorama —
-so that the map becomes one of many ways to navigate, not the only way.
-
-The user should be able to reach their destination
-with minimal screen interaction.
