@@ -1,7 +1,17 @@
 {
   "permissions": {
     "allow": [
-      "Bash(npm install:*)"
+      "Bash(npm install:*)",
+      "Bash(find C:Usersime26_CapstonemoonfrontendMoonApp -name AppNavigator.tsx -o -name *Navigator*)",
+      "Bash(npx tsc:*)",
+      "Bash(curl:*)",
+      "Bash(adb logcat:*)",
+      "Bash(adb shell:*)",
+      "Bash(adb exec-out:*)",
+      "Bash(./gradlew clean:*)",
+      "Bash(./gradlew app:installDebug -PreactNativeDevServerPort=8081)",
+      "Bash(./gradlew app:installDebug)",
+      "Bash(adb pull:*)"
     ]
   }
 }

@@ -19,8 +19,9 @@ export async function fetchRoute(
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      origin: { latitude: origin.lat, longitude: origin.lng },
-      destination: { latitude: destination.lat, longitude: destination.lng },
+      originLocation: { latitude: origin.lat, longitude: origin.lng },
+      destinationLocation: { latitude: destination.lat, longitude: destination.lng },
+      destinationName: destination.name,
     }),
   });
 

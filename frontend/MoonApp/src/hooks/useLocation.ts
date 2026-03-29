@@ -37,11 +37,18 @@ async function requestLocationPermission(): Promise<boolean> {
 }
 
 export function useLocation(options?: UseLocationOptions): UseLocationReturn {
-  const opts = { ...DEFAULT_OPTIONS, ...options };
+  const enableHighAccuracy = options?.enableHighAccuracy ?? DEFAULT_OPTIONS.enableHighAccuracy;
+  const interval = options?.interval ?? DEFAULT_OPTIONS.interval;
+  const minAccuracy = options?.minAccuracy ?? DEFAULT_OPTIONS.minAccuracy;
+
   const [position, setPosition] = useState<GpsPosition | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isTracking, setIsTracking] = useState(false);
   const watchId = useRef<number | null>(null);
+
+  // Store latest options in ref to avoid re-creating callbacks
+  const optsRef = useRef({ enableHighAccuracy, interval, minAccuracy });
+  optsRef.current = { enableHighAccuracy, interval, minAccuracy };
 
   const stopTracking = useCallback(() => {
     if (watchId.current !== null) {
@@ -61,10 +68,11 @@ export function useLocation(options?: UseLocationOptions): UseLocationReturn {
     setError(null);
     setIsTracking(true);
 
+    const opts = optsRef.current;
     watchId.current = Geolocation.watchPosition(
       (pos: GeoPosition) => {
         const { coords } = pos;
-        if (coords.accuracy && coords.accuracy > opts.minAccuracy) {
+        if (coords.accuracy && coords.accuracy > optsRef.current.minAccuracy) {
           return;
         }
         setPosition({
@@ -85,7 +93,7 @@ export function useLocation(options?: UseLocationOptions): UseLocationReturn {
         fastestInterval: opts.interval,
       },
     );
-  }, [opts.enableHighAccuracy, opts.interval, opts.minAccuracy]);
+  }, []);
 
   useEffect(() => {
     return () => {

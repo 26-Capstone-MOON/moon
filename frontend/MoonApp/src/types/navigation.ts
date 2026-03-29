@@ -2,6 +2,7 @@ export interface Place {
   name: string;
   address: string;
   distance?: string;
+  category?: string;
   lat: number;
   lng: number;
 }
@@ -38,5 +39,5 @@ export type RootStackParamList = {
   Search: { type: 'departure' | 'destination' };
   RouteConfirm: { departure: Place; destination: Place };
   Navigation: { departure: Place; destination: Place; dpList: DecisionPoint[] };
-  Progress: undefined;
+  Progress: { departure: Place; destination: Place; dpList: DecisionPoint[] };
 };

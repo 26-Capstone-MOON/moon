@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo } from 'react';
 import {
   ScrollView,
   StyleSheet,
@@ -8,42 +8,47 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/Ionicons';
-import { NaverMapView, NaverMapMarkerOverlay } from '@mj-studio/react-native-naver-map';
+import { NaverMapMarkerOverlay } from '@mj-studio/react-native-naver-map';
 import type { StackScreenProps } from '@react-navigation/stack';
 import { COLORS } from '../constants/colors';
-import { fetchRoute } from '../services/routeService';
+import { useRoute } from '../hooks/useRoute';
+import { useRouteStore } from '../stores/useRouteStore';
+import MapView from '../components/map/MapView';
+import RoutePolyline from '../components/map/RoutePolyline';
+import DpMarker from '../components/map/DpMarker';
+import LoadingOverlay from '../components/common/LoadingOverlay';
+import ActionButton from '../components/common/ActionButton';
 import type { RootStackParamList } from '../types/navigation';
-import type { RouteData, DecisionPoint } from '../types/route';
+import type { Location } from '../types/route';
 import { formatDistance } from '../utils/formatDistance';
 import { formatTime } from '../utils/formatTime';
 
 type Props = StackScreenProps<RootStackParamList, 'RouteConfirm'>;
 
+/** GeoJSON [lng, lat] → { latitude, longitude } */
+function geoJsonToCoords(lineString: { coordinates: number[][] }): Location[] {
+  return lineString.coordinates.map(([lng, lat]) => ({
+    latitude: lat,
+    longitude: lng,
+  }));
+}
+
 export default function RouteConfirmScreen({ navigation, route }: Props) {
   const { departure, destination } = route.params;
-  const [routeData, setRouteData] = useState<RouteData | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
+  const { loadRoute } = useRoute();
+  const routeData = useRouteStore((s) => s.routeData);
+  const loading = useRouteStore((s) => s.loading);
+  const error = useRouteStore((s) => s.error);
+  const decisionPoints = useRouteStore((s) => s.decisionPoints);
 
   useEffect(() => {
-    async function loadRoute() {
-      setIsLoading(true);
-      try {
-        const data = await fetchRoute(departure, destination);
-        setRouteData(data);
-      } catch {
-        // fallback: keep empty
-      } finally {
-        setIsLoading(false);
-      }
-    }
-    loadRoute();
-  }, [departure, destination]);
+    loadRoute(departure, destination);
+  }, [departure, destination, loadRoute]);
 
-  const dpList = routeData?.decisionPoints ?? [];
-
-  const handleStart = () => {
-    navigation.navigate('Navigation', { departure, destination, dpList });
-  };
+  const polylineCoords = useMemo(() => {
+    if (!routeData?.routeLineString) return [];
+    return geoJsonToCoords(routeData.routeLineString);
+  }, [routeData]);
 
   const mapCamera = useMemo(() => ({
     latitude: (departure.lat + destination.lat) / 2,
@@ -51,8 +56,18 @@ export default function RouteConfirmScreen({ navigation, route }: Props) {
     zoom: 14,
   }), [departure, destination]);
 
+  const handleStart = () => {
+    navigation.navigate('Navigation', {
+      departure,
+      destination,
+      dpList: decisionPoints,
+    });
+  };
+
   return (
     <SafeAreaView style={styles.safe}>
+      {loading && <LoadingOverlay />}
+
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity
@@ -73,20 +88,32 @@ export default function RouteConfirmScreen({ navigation, route }: Props) {
         <Text style={styles.destName}>{destination.name}</Text>
 
         <View style={styles.infoTagRow}>
-          <Text style={styles.infoTag}>{routeData ? formatTime(routeData.totalTime) : '--분'}</Text>
+          <Text style={styles.infoTag}>
+            {routeData ? formatTime(routeData.totalTime) : '--분'}
+          </Text>
           <Text style={styles.infoDivider}>|</Text>
-          <Text style={styles.infoTag}>{routeData ? formatDistance(routeData.totalDistance) : '--m'}</Text>
+          <Text style={styles.infoTag}>
+            {routeData ? formatDistance(routeData.totalDistance) : '--m'}
+          </Text>
         </View>
+
+        {/* Error */}
+        {error && (
+          <Text style={styles.errorText}>{error}</Text>
+        )}
 
         {/* Naver Map */}
         <View style={styles.mapContainer}>
-          <NaverMapView
-            style={styles.map}
-            initialCamera={mapCamera}
-            isShowCompass
-            isShowZoomControls={false}
-            isShowLocationButton={false}
-          >
+          <MapView initialCamera={mapCamera}>
+            {/* Route polyline */}
+            <RoutePolyline coordinates={polylineCoords} />
+
+            {/* DP markers */}
+            {decisionPoints.map((dp, i) => (
+              <DpMarker key={dp.dpId} dp={dp} index={i} />
+            ))}
+
+            {/* Departure marker (green) */}
             <NaverMapMarkerOverlay
               latitude={departure.lat}
               longitude={departure.lng}
@@ -94,6 +121,8 @@ export default function RouteConfirmScreen({ navigation, route }: Props) {
               height={24}
               caption={{ text: '출발', textSize: 12, color: '#34C759' }}
             />
+
+            {/* Destination marker (red) */}
             <NaverMapMarkerOverlay
               latitude={destination.lat}
               longitude={destination.lng}
@@ -101,12 +130,12 @@ export default function RouteConfirmScreen({ navigation, route }: Props) {
               height={24}
               caption={{ text: '도착', textSize: 12, color: '#FF3B30' }}
             />
-          </NaverMapView>
+          </MapView>
         </View>
 
         {/* DP Timeline */}
         <View style={styles.timeline}>
-          {/* Start */}
+          {/* Start node */}
           <TimelineNode
             icon="ellipse"
             iconColor="#34C759"
@@ -115,28 +144,28 @@ export default function RouteConfirmScreen({ navigation, route }: Props) {
             showLine
           />
 
-          {dpList.length === 0 ? (
+          {decisionPoints.length === 0 && !loading ? (
             <TimelineNode
               icon="ellipse"
               iconColor={COLORS.primary}
-              label={isLoading ? '경로 정보를 불러오는 중...' : '경로 정보 없음'}
+              label="경로 정보 없음"
               sub=""
               showLine
               faded
             />
           ) : (
-            dpList.map((dp, index) => (
+            decisionPoints.map((dp, index) => (
               <TimelineNode
                 key={dp.dpId}
                 number={index + 1}
                 label={dp.guideText || '안내 정보 로딩 중...'}
                 sub={dp.landmarks[0]?.name || ''}
-                showLine={index < dpList.length - 1}
+                showLine={index < decisionPoints.length - 1}
               />
             ))
           )}
 
-          {/* End */}
+          {/* End node */}
           <TimelineNode
             icon="ellipse"
             iconColor="#FF3B30"
@@ -149,9 +178,11 @@ export default function RouteConfirmScreen({ navigation, route }: Props) {
 
       {/* Start Button */}
       <View style={styles.bottomContainer}>
-        <TouchableOpacity style={styles.startButton} onPress={handleStart}>
-          <Text style={styles.startButtonText}>안내 시작하기 →</Text>
-        </TouchableOpacity>
+        <ActionButton
+          label="안내 시작하기 →"
+          onPress={handleStart}
+          disabled={!routeData || loading}
+        />
       </View>
     </SafeAreaView>
   );
@@ -243,6 +274,11 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#DDDDDD',
   },
+  errorText: {
+    fontSize: 13,
+    color: '#FF3B30',
+    marginTop: 8,
+  },
 
   // Map
   mapContainer: {
@@ -250,9 +286,6 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     overflow: 'hidden',
     marginTop: 20,
-  },
-  map: {
-    flex: 1,
   },
 
   // Timeline
@@ -322,17 +355,5 @@ const styles = StyleSheet.create({
     paddingBottom: 24,
     paddingTop: 12,
     backgroundColor: COLORS.background,
-  },
-  startButton: {
-    backgroundColor: COLORS.primary,
-    height: 52,
-    borderRadius: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  startButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: 'bold',
   },
 });
