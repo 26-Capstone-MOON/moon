@@ -11,6 +11,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/Ionicons';
 import type { StackScreenProps } from '@react-navigation/stack';
+import { useIsFocused } from '@react-navigation/native';
 import { COLORS } from '../constants/colors';
 import { vibrateApproach, vibrateArrival, vibrateTurn } from '../services/hapticService';
 import { MOCK_ROUTE_RESPONSE } from '../mocks/mockRoute';
@@ -66,11 +67,19 @@ export default function NavigationScreen({ navigation, route }: Props) {
 
   const routeData = useRouteStore(s => s.routeData);
   const { currentDpIndex, setCurrentDp } = useNavigationStore();
+  const isFocused = useIsFocused();
 
   const [localIndex, setLocalIndex] = useState(currentDpIndex);
   const [isNavigating, setIsNavigating] = useState(true);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const translateX = useRef(new Animated.Value(0)).current;
+
+  // Reset translateX when returning from ProgressScreen
+  useEffect(() => {
+    if (isFocused) {
+      translateX.setValue(0);
+    }
+  }, [isFocused, translateX]);
 
   const currentDP: DecisionPoint | undefined = dpList[localIndex];
   const nextDP: DecisionPoint | undefined = dpList[localIndex + 1];
@@ -100,22 +109,22 @@ export default function NavigationScreen({ navigation, route }: Props) {
     }
   }, [localIndex, currentDP, isNavigating]);
 
-  // Auto-progress mock
+  // Auto-progress mock (pause when not focused)
   useEffect(() => {
-    if (!isNavigating || isLastDP) { return; }
+    if (!isNavigating || isLastDP || !isFocused) { return; }
     timerRef.current = setTimeout(() => {
-      setLocalIndex(prev => prev + 1);
+      setLocalIndex(prev => Math.min(prev + 1, dpList.length - 1));
     }, 5000);
     return () => {
       if (timerRef.current) { clearTimeout(timerRef.current); }
     };
-  }, [localIndex, isNavigating, isLastDP]);
+  }, [localIndex, isNavigating, isLastDP, isFocused, dpList.length]);
 
   const handleStop = useCallback(() => {
     setIsNavigating(false);
     if (timerRef.current) { clearTimeout(timerRef.current); }
     useNavigationStore.getState().reset();
-    navigation.goBack();
+    navigation.popToTop();
   }, [navigation]);
 
   const handlePrev = () => {
@@ -126,9 +135,12 @@ export default function NavigationScreen({ navigation, route }: Props) {
     if (!isLastDP) { setLocalIndex(prev => prev + 1); }
   };
 
-  const navigateToProgress = useCallback(() => {
+  const navigateToProgressRef = useRef(() => {
     navigation.navigate('Progress', { departure, destination, dpList });
-  }, [navigation, departure, destination, dpList]);
+  });
+  navigateToProgressRef.current = () => {
+    navigation.navigate('Progress', { departure, destination, dpList });
+  };
 
   // Swipe gesture for Progress screen transition (swipe left)
   const panResponder = useRef(
@@ -146,7 +158,7 @@ export default function NavigationScreen({ navigation, route }: Props) {
             useNativeDriver: true,
           }).start(() => {
             translateX.setValue(0);
-            navigateToProgress();
+            navigateToProgressRef.current();
           });
         } else {
           Animated.spring(translateX, {
@@ -158,7 +170,22 @@ export default function NavigationScreen({ navigation, route }: Props) {
     }),
   ).current;
 
-  if (!currentDP) { return null; }
+  // Clamp localIndex if it goes out of bounds
+  useEffect(() => {
+    if (dpList.length > 0 && localIndex >= dpList.length) {
+      setLocalIndex(dpList.length - 1);
+    }
+  }, [localIndex, dpList.length]);
+
+  if (!currentDP) {
+    return (
+      <SafeAreaView style={styles.safe}>
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+          <Text style={{ color: COLORS.subtext }}>경로 정보를 불러오는 중...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   // Map camera center on current DP
   const cameraLat = currentDP.location.latitude;
@@ -320,7 +347,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 16,
     paddingVertical: 10,
-    backgroundColor: COLORS.background,
+    backgroundColor: COLORS.card,
     elevation: 4,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
@@ -356,7 +383,7 @@ const styles = StyleSheet.create({
     color: COLORS.text,
   },
   progressBadge: {
-    backgroundColor: '#EBF2FC',
+    backgroundColor: '#E8ECF8',
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 12,
@@ -447,7 +474,7 @@ const styles = StyleSheet.create({
     marginHorizontal: 16,
     marginTop: 10,
     padding: 18,
-    backgroundColor: COLORS.background,
+    backgroundColor: COLORS.card,
     borderRadius: 18,
     elevation: 4,
     shadowColor: '#000',
@@ -467,7 +494,7 @@ const styles = StyleSheet.create({
     color: COLORS.primary,
   },
   positionBadge: {
-    backgroundColor: '#EBF2FC',
+    backgroundColor: '#E8ECF8',
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 6,
@@ -510,7 +537,7 @@ const styles = StyleSheet.create({
     borderRadius: 24,
     borderWidth: 1.5,
     borderColor: COLORS.primary,
-    backgroundColor: COLORS.background,
+    backgroundColor: COLORS.card,
   },
   btnOutlineText: {
     fontSize: 14,
@@ -556,7 +583,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 32,
   },
   arrivedCard: {
-    backgroundColor: COLORS.background,
+    backgroundColor: COLORS.card,
     borderRadius: 24,
     padding: 32,
     alignItems: 'center',
@@ -566,7 +593,7 @@ const styles = StyleSheet.create({
     width: 64,
     height: 64,
     borderRadius: 32,
-    backgroundColor: '#EBF2FC',
+    backgroundColor: '#E8ECF8',
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 12,

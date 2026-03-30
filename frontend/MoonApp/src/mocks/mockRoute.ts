@@ -71,8 +71,8 @@ export const MOCK_ROUTE_RESPONSE: RouteData = {
   routeLineString: {
     type: 'LineString',
     coordinates: [
-      [126.9820, 37.5680],
-      [126.9830, 37.5688],
+      [126.9783, 37.5710],
+      [126.9815, 37.5703],
       [126.9844, 37.5696],
       [126.9852, 37.5700],
       [126.9860, 37.5705],
@@ -89,8 +89,8 @@ export const MOCK_ROUTE_RESPONSE: RouteData = {
     {
       dpId: 'dp-0',
       dpType: 'DEPARTURE',
-      location: { latitude: 37.5680, longitude: 126.9820 },
-      guideText: '광화문 사거리에서 출발합니다. 세종대로 방면으로 직진하세요.',
+      location: { latitude: 37.5710, longitude: 126.9783 },
+      guideText: '세종대로 사거리에서 출발합니다. 종로 방면으로 직진하세요.',
       landmarks: [],
     },
     {

@@ -26,7 +26,7 @@ const styles = StyleSheet.create({
     zIndex: 100,
   },
   card: {
-    backgroundColor: COLORS.background,
+    backgroundColor: COLORS.card,
     borderRadius: 16,
     padding: 32,
     alignItems: 'center',

@@ -119,7 +119,7 @@ export default function RouteConfirmScreen({ navigation, route }: Props) {
               longitude={departure.lng}
               width={24}
               height={24}
-              caption={{ text: '출발', textSize: 12, color: '#34C759' }}
+              caption={{ text: '출발', textSize: 12, color: '#191970' }}
             />
 
             {/* Destination marker (red) */}
@@ -128,7 +128,7 @@ export default function RouteConfirmScreen({ navigation, route }: Props) {
               longitude={destination.lng}
               width={24}
               height={24}
-              caption={{ text: '도착', textSize: 12, color: '#FF3B30' }}
+              caption={{ text: '도착', textSize: 12, color: '#3939A6' }}
             />
           </MapView>
         </View>
@@ -138,7 +138,7 @@ export default function RouteConfirmScreen({ navigation, route }: Props) {
           {/* Start node */}
           <TimelineNode
             icon="ellipse"
-            iconColor="#34C759"
+            iconColor="#191970"
             label={departure.name}
             sub="출발지에서 출발"
             showLine
@@ -168,7 +168,7 @@ export default function RouteConfirmScreen({ navigation, route }: Props) {
           {/* End node */}
           <TimelineNode
             icon="ellipse"
-            iconColor="#FF3B30"
+            iconColor="#3939A6"
             label={destination.name}
             sub="도착"
             showLine={false}
@@ -200,6 +200,8 @@ interface TimelineNodeProps {
 }
 
 function TimelineNode({ number, icon, iconColor, label, sub, distance, showLine, faded }: TimelineNodeProps) {
+  const isDpStep = !icon && number !== undefined;
+
   return (
     <View style={styles.nodeContainer}>
       <View style={styles.nodeLeft}>
@@ -215,7 +217,7 @@ function TimelineNode({ number, icon, iconColor, label, sub, distance, showLine,
         {showLine && <View style={styles.connectorLine} />}
       </View>
 
-      <View style={styles.nodeRight}>
+      <View style={[styles.nodeRight, isDpStep && styles.nodeRightCard]}>
         <Text style={[styles.nodeLabel, faded && styles.fadedText]}>{label}</Text>
         {sub !== '' && <Text style={styles.nodeSub}>{sub}</Text>}
         {distance && <Text style={styles.nodeDistance}>{distance}</Text>}
@@ -296,33 +298,33 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
   },
   nodeLeft: {
-    width: 28,
+    width: 24,
     alignItems: 'center',
   },
   iconCircle: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
     justifyContent: 'center',
     alignItems: 'center',
   },
   numberCircle: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
     backgroundColor: COLORS.primary,
     justifyContent: 'center',
     alignItems: 'center',
   },
   numberText: {
-    fontSize: 13,
+    fontSize: 11,
     fontWeight: 'bold',
     color: '#FFFFFF',
   },
   connectorLine: {
-    width: 2,
+    width: 1.5,
     flex: 1,
-    backgroundColor: COLORS.primary,
+    backgroundColor: 'rgba(25, 25, 112, 0.2)',
     minHeight: 32,
   },
   nodeRight: {
@@ -330,15 +332,25 @@ const styles = StyleSheet.create({
     paddingLeft: 14,
     paddingBottom: 20,
   },
+  nodeRightCard: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E8E8E8',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    marginBottom: 12,
+  },
   nodeLabel: {
     fontSize: 15,
     fontWeight: '600',
-    color: COLORS.text,
+    color: '#333333',
   },
   nodeSub: {
     fontSize: 13,
-    color: COLORS.subtext,
-    marginTop: 2,
+    color: COLORS.primary,
+    marginTop: 3,
+    fontWeight: '500',
   },
   nodeDistance: {
     fontSize: 12,
@@ -354,6 +366,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingBottom: 24,
     paddingTop: 12,
-    backgroundColor: COLORS.background,
+    backgroundColor: COLORS.card,
   },
 });

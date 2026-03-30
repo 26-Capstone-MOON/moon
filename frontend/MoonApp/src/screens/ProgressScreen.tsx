@@ -248,7 +248,7 @@ export default function ProgressScreen({ navigation, route }: Props) {
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: '#F7F8FA',
+    backgroundColor: COLORS.background,
   },
   safe: {
     flex: 1,
@@ -260,7 +260,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 16,
     paddingVertical: 12,
-    backgroundColor: COLORS.background,
+    backgroundColor: COLORS.card,
     elevation: 2,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
@@ -290,7 +290,7 @@ const styles = StyleSheet.create({
   summaryCard: {
     margin: 16,
     padding: 20,
-    backgroundColor: COLORS.background,
+    backgroundColor: COLORS.card,
     borderRadius: 18,
     elevation: 3,
     shadowColor: '#000',
@@ -310,7 +310,7 @@ const styles = StyleSheet.create({
     borderColor: COLORS.primary,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#EBF2FC',
+    backgroundColor: '#E8ECF8',
   },
   progressPercent: {
     fontSize: 22,
@@ -399,7 +399,7 @@ const styles = StyleSheet.create({
     marginLeft: 10,
     marginBottom: 12,
     padding: 14,
-    backgroundColor: COLORS.background,
+    backgroundColor: COLORS.card,
     borderRadius: 14,
     elevation: 1,
     shadowColor: '#000',
@@ -469,7 +469,7 @@ const styles = StyleSheet.create({
     marginHorizontal: 16,
     marginBottom: 4,
     padding: 16,
-    backgroundColor: COLORS.background,
+    backgroundColor: COLORS.card,
     borderRadius: 16,
     elevation: 3,
     shadowColor: '#000',
