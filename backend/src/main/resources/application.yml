@@ -1,0 +1,8 @@
+server:
+  port: 8080
+
+services:
+  python:
+    base-url: ${PYTHON_SERVICE_URL:http://localhost:8000}
+  deviation:
+    base-url: ${PYTHON_SERVICE_URL:http://localhost:8000}
