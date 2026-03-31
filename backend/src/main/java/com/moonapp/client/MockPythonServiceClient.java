@@ -50,4 +50,25 @@ public class MockPythonServiceClient extends PythonServiceClient {
     public String getRoute(String routeId) {
         return createRoute(null, null, null);
     }
+
+    @Override
+    public String uploadPanoramaResult(String routeId, String requestBody) {
+        return """
+            {"status": "ok", "message": "파노라마 결과 저장됨"}
+            """;
+    }
+
+    @Override
+    public String reroute(String routeId, String requestBody) {
+        return """
+            {"route_id": "route_test_001", "message": "재라우팅 완료", "decision_points": []}
+            """;
+    }
+
+    @Override
+    public String conversation(String routeId, String requestBody) {
+        return """
+            {"message": "안내를 시작합니다.", "next_action": "CONTINUE"}
+            """;
+    }
 }
