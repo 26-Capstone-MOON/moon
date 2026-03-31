@@ -266,28 +266,28 @@ export default function NavigationScreen({ navigation, route }: Props) {
 
         {/* Guide Card */}
         <View style={styles.guideCard}>
-          {currentDP.landmarks[0] && (
+          {currentDP.selectedLandmark && (
             <View style={styles.landmarkRow}>
               <Icon name="location" size={14} color={COLORS.primary} />
-              <Text style={styles.landmarkName}>{currentDP.landmarks[0].name}</Text>
-              {currentDP.landmarks[0].position && (
+              <Text style={styles.landmarkName}>{currentDP.selectedLandmark.name}</Text>
+              {currentDP.selectedLandmark.position && (
                 <View style={styles.positionBadge}>
                   <Text style={styles.positionText}>
-                    {currentDP.landmarks[0].position === 'LEFT' ? '왼쪽' :
-                     currentDP.landmarks[0].position === 'RIGHT' ? '오른쪽' : '전방'}
+                    {currentDP.selectedLandmark.position === 'LEFT' ? '왼쪽' :
+                     currentDP.selectedLandmark.position === 'RIGHT' ? '오른쪽' : '전방'}
                   </Text>
                 </View>
               )}
             </View>
           )}
 
-          <Text style={styles.guideText}>{currentDP.guideText}</Text>
+          <Text style={styles.guideText}>{currentDP.guidance?.primary}</Text>
 
           {nextDP && (
             <View style={styles.nextHintRow}>
               <Icon name="arrow-forward-circle-outline" size={14} color={COLORS.subtext} />
               <Text style={styles.nextHintText} numberOfLines={1}>
-                다음: {nextDP.guideText}
+                다음: {nextDP.guidance?.primary}
               </Text>
             </View>
           )}

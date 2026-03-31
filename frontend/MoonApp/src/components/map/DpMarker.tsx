@@ -20,7 +20,7 @@ export default function DpMarker({ dp, index, isActive = false }: Props) {
       longitude={dp.location.longitude}
       width={24}
       height={24}
-      caption={dp.landmarks[0] ? { text: dp.landmarks[0].name, textSize: 10, color: COLORS.text } : undefined}>
+      caption={dp.selectedLandmark ? { text: dp.selectedLandmark.name, textSize: 10, color: COLORS.text } : undefined}>
       <View key={`${dp.dpId}-${isActive}`} style={[styles.marker, { backgroundColor: bgColor }]}>
         <Text style={[styles.markerText, { color: textColor }]}>{index + 1}</Text>
       </View>

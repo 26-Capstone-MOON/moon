@@ -200,13 +200,13 @@ export default function ProgressScreen({ navigation, route }: Props) {
                       isPassed && styles.textPassedGuide,
                     ]}
                     numberOfLines={2}>
-                    {dp.guideText}
+                    {dp.guidance?.primary}
                   </Text>
-                  {dp.landmarks[0] && (
+                  {dp.selectedLandmark && (
                     <View style={styles.checkpointLandmark}>
                       <Icon name="location-outline" size={11} color={COLORS.subtext} />
                       <Text style={styles.checkpointLandmarkText}>
-                        {dp.landmarks[0].name}
+                        {dp.selectedLandmark.name}
                       </Text>
                     </View>
                   )}

@@ -161,8 +161,8 @@ export default function RouteConfirmScreen({ navigation, route }: Props) {
               <TimelineNode
                 key={dp.dpId}
                 number={index + 1}
-                label={dp.guideText || '안내 정보 로딩 중...'}
-                sub={dp.landmarks[0]?.name || ''}
+                label={dp.guidance?.primary || '안내 정보 로딩 중...'}
+                sub={dp.selectedLandmark?.name || ''}
                 showLine={index < decisionPoints.length - 1}
               />
             ))

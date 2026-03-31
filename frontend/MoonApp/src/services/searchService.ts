@@ -42,7 +42,7 @@ const MOCK_RESULTS: SearchResult[] = [
 ];
 
 async function searchPlacesMock(query: string): Promise<SearchResult[]> {
-  await new Promise((r) => setTimeout(r, 500));
+  await new Promise<void>((r) => setTimeout(r, 500));
   const lower = query.toLowerCase();
   return MOCK_RESULTS.filter(
     (p) => p.name.includes(lower) || p.address.includes(lower),
