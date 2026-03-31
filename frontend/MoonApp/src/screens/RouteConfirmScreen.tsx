@@ -136,13 +136,16 @@ export default function RouteConfirmScreen({ navigation, route }: Props) {
         {/* DP Timeline */}
         <View style={styles.timeline}>
           {/* Start node */}
-          <TimelineNode
-            icon="ellipse"
-            iconColor="#191970"
-            label={departure.name}
-            sub="출발지에서 출발"
-            showLine
-          />
+          <View style={styles.endpointRow}>
+            <View style={styles.endpointLeft}>
+              <View style={styles.departureDot} />
+              <View style={styles.endpointLine} />
+            </View>
+            <View style={styles.endpointRight}>
+              <Text style={styles.endpointLabel}>현재 위치</Text>
+              <Text style={styles.endpointSub}>출발지에서 출발</Text>
+            </View>
+          </View>
 
           {decisionPoints.length === 0 && !loading ? (
             <TimelineNode
@@ -166,13 +169,15 @@ export default function RouteConfirmScreen({ navigation, route }: Props) {
           )}
 
           {/* End node */}
-          <TimelineNode
-            icon="ellipse"
-            iconColor="#3939A6"
-            label={destination.name}
-            sub="도착"
-            showLine={false}
-          />
+          <View style={styles.endpointRow}>
+            <View style={styles.endpointLeft}>
+              <View style={styles.arrivalDot} />
+            </View>
+            <View style={styles.endpointRight}>
+              <Text style={styles.endpointLabel}>{destination.name}</Text>
+              <Text style={styles.endpointSub}>목적지에 도착했습니다</Text>
+            </View>
+          </View>
         </View>
       </ScrollView>
 
@@ -356,6 +361,50 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: COLORS.primary,
     marginTop: 4,
+  },
+  endpointRow: {
+    flexDirection: 'row',
+  },
+  endpointLeft: {
+    width: 24,
+    alignItems: 'center',
+  },
+  departureDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: '#191970',
+    marginTop: 4,
+  },
+  arrivalDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 3,
+    borderColor: '#E85030',
+    marginTop: 4,
+  },
+  endpointLine: {
+    width: 2,
+    flex: 1,
+    backgroundColor: '#D0D0D0',
+    minHeight: 24,
+  },
+  endpointRight: {
+    flex: 1,
+    paddingLeft: 14,
+    paddingBottom: 16,
+  },
+  endpointLabel: {
+    fontSize: 15,
+    fontWeight: 'bold',
+    color: '#1A1A1A',
+  },
+  endpointSub: {
+    fontSize: 12,
+    color: '#999999',
+    marginTop: 2,
   },
   fadedText: {
     color: '#AAAAAA',
