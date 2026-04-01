@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Alert,
   ScrollView,
@@ -11,6 +11,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Icon from 'react-native-vector-icons/Ionicons';
 import type { StackScreenProps } from '@react-navigation/stack';
+import { useFocusEffect } from '@react-navigation/native';
 import { COLORS } from '../constants/colors';
 import type { Place, RootStackParamList } from '../types/navigation';
 
@@ -23,6 +24,19 @@ export default function HomeScreen({ navigation, route }: Props) {
   const [departure, setDeparture] = useState<Place | null>(null);
   const [destination, setDestination] = useState<Place | null>(null);
   const [recentPlaces, setRecentPlaces] = useState<Place[]>([]);
+
+  const hasNavigated = useRef(false);
+
+  // Reset departure/destination when returning from navigation flow
+  useFocusEffect(
+    useCallback(() => {
+      if (hasNavigated.current && !route.params?.selectedPlace) {
+        setDeparture(null);
+        setDestination(null);
+        hasNavigated.current = false;
+      }
+    }, [route.params?.selectedPlace]),
+  );
 
   // Load recent places from AsyncStorage
   useEffect(() => {
@@ -61,6 +75,7 @@ export default function HomeScreen({ navigation, route }: Props) {
   const handleSearch = () => {
     if (departure && destination) {
       addRecentPlace(destination);
+      hasNavigated.current = true;
       navigation.navigate('RouteConfirm', { departure, destination });
     }
   };
@@ -79,6 +94,7 @@ export default function HomeScreen({ navigation, route }: Props) {
     setDestination(place);
     if (departure) {
       addRecentPlace(place);
+      hasNavigated.current = true;
       navigation.navigate('RouteConfirm', { departure, destination: place });
     }
   };
@@ -189,34 +205,36 @@ export default function HomeScreen({ navigation, route }: Props) {
             <Text style={styles.recentTitle}>최근에 간 곳</Text>
           </View>
 
-          {recentPlaces.length === 0 ? (
-            <View style={styles.emptyCard}>
-              <View style={styles.emptyIconWrap}>
-                <Icon name="location-outline" size={24} color={COLORS.subtext} />
-              </View>
-              <Text style={styles.emptyText}>최근 방문 기록이 없습니다</Text>
-              <Text style={styles.emptySub}>길안내를 시작해보세요</Text>
-            </View>
-          ) : (
-            recentPlaces.map((place, index) => (
-              <TouchableOpacity
-                key={`${place.lat}-${place.lng}-${index}`}
-                style={[
-                  styles.recentItem,
-                  index < recentPlaces.length - 1 && styles.recentItemBorder,
-                ]}
-                onPress={() => handleRecentPlace(place)}>
-                <Icon name="location-outline" size={20} color={COLORS.subtext} />
-                <View style={styles.recentInfo}>
-                  <Text style={styles.recentName}>{place.name}</Text>
-                  <Text style={styles.recentAddress}>
-                    {place.address}
-                    {place.distance ? ` · ${place.distance}` : ''}
-                  </Text>
+          <View style={styles.recentCard}>
+            {recentPlaces.length === 0 ? (
+              <View style={styles.emptyContent}>
+                <View style={styles.emptyIconWrap}>
+                  <Icon name="location-outline" size={24} color={COLORS.subtext} />
                 </View>
-              </TouchableOpacity>
-            ))
-          )}
+                <Text style={styles.emptyText}>최근 방문 기록이 없습니다</Text>
+                <Text style={styles.emptySub}>길안내를 시작해보세요</Text>
+              </View>
+            ) : (
+              recentPlaces.map((place, index) => (
+                <TouchableOpacity
+                  key={`${place.lat}-${place.lng}-${index}`}
+                  style={[
+                    styles.recentItem,
+                    index < recentPlaces.length - 1 && styles.recentItemBorder,
+                  ]}
+                  onPress={() => handleRecentPlace(place)}>
+                  <Icon name="location-outline" size={20} color={COLORS.subtext} />
+                  <View style={styles.recentInfo}>
+                    <Text style={styles.recentName}>{place.name}</Text>
+                    <Text style={styles.recentAddress}>
+                      {place.address}
+                      {place.distance ? ` · ${place.distance}` : ''}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              ))
+            )}
+          </View>
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -448,17 +466,17 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: COLORS.primary,
   },
-  emptyCard: {
+  recentCard: {
     backgroundColor: COLORS.card,
     borderRadius: 14,
     marginTop: 12,
-    paddingVertical: 36,
+    paddingHorizontal: 16,
+    paddingVertical: 4,
+    ...CARD_SHADOW,
+  },
+  emptyContent: {
+    paddingVertical: 32,
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 10,
-    elevation: 2,
   },
   emptyIconWrap: {
     width: 48,
@@ -482,7 +500,7 @@ const styles = StyleSheet.create({
   recentItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 14,
+    paddingVertical: 12,
     gap: 12,
   },
   recentItemBorder: {

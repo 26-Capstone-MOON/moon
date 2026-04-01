@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ScrollView,
   StyleSheet,
@@ -17,6 +17,7 @@ import MapView from '../components/map/MapView';
 import RoutePolyline from '../components/map/RoutePolyline';
 import DpMarker from '../components/map/DpMarker';
 import LoadingOverlay from '../components/common/LoadingOverlay';
+import ErrorToast from '../components/common/ErrorToast';
 import ActionButton from '../components/common/ActionButton';
 import type { RootStackParamList } from '../types/navigation';
 import type { Location } from '../types/route';
@@ -41,9 +42,21 @@ export default function RouteConfirmScreen({ navigation, route }: Props) {
   const error = useRouteStore((s) => s.error);
   const decisionPoints = useRouteStore((s) => s.decisionPoints);
 
+  const [toastVisible, setToastVisible] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
+
   useEffect(() => {
     loadRoute(departure, destination);
   }, [departure, destination, loadRoute]);
+
+  useEffect(() => {
+    if (error) {
+      setToastMessage(error);
+      setToastVisible(true);
+    }
+  }, [error]);
+
+  const handleDismissToast = useCallback(() => setToastVisible(false), []);
 
   const polylineCoords = useMemo(() => {
     if (!routeData?.routeLineString) return [];
@@ -96,11 +109,6 @@ export default function RouteConfirmScreen({ navigation, route }: Props) {
             {routeData ? formatDistance(routeData.totalDistance) : '--m'}
           </Text>
         </View>
-
-        {/* Error */}
-        {error && (
-          <Text style={styles.errorText}>{error}</Text>
-        )}
 
         {/* Naver Map */}
         <View style={styles.mapContainer}>
@@ -189,6 +197,12 @@ export default function RouteConfirmScreen({ navigation, route }: Props) {
           disabled={!routeData || loading}
         />
       </View>
+
+      <ErrorToast
+        message={toastMessage}
+        visible={toastVisible}
+        onDismiss={handleDismissToast}
+      />
     </SafeAreaView>
   );
 }
@@ -281,12 +295,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#DDDDDD',
   },
-  errorText: {
-    fontSize: 13,
-    color: '#FF3B30',
-    marginTop: 8,
-  },
-
   // Map
   mapContainer: {
     height: 220,

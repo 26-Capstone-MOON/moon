@@ -1,5 +1,6 @@
 import { toCamelCase } from '../utils/caseConverter';
 import { MOCK_ROUTE_RESPONSE } from '../mocks/mockRoute';
+import { getErrorMessage } from '../utils/errorHandler';
 import type { RouteData } from '../types/route';
 import type { ApiResponse } from '../types/api';
 import type { Place } from '../types/navigation';
@@ -28,7 +29,8 @@ export async function fetchRoute(
   const json: ApiResponse<RouteData> = toCamelCase(await res.json());
 
   if (json.status === 'ERROR') {
-    throw new Error(json.error?.message ?? '경로 요청 실패');
+    const code = json.error?.code ?? '';
+    throw new Error(code ? getErrorMessage(code) : '경로 요청 실패');
   }
 
   return json.data!;
@@ -43,7 +45,8 @@ export async function fetchRouteById(routeId: string): Promise<RouteData> {
   const json: ApiResponse<RouteData> = toCamelCase(await res.json());
 
   if (json.status === 'ERROR') {
-    throw new Error(json.error?.message ?? '경로 조회 실패');
+    const code = json.error?.code ?? '';
+    throw new Error(code ? getErrorMessage(code) : '경로 조회 실패');
   }
 
   return json.data!;

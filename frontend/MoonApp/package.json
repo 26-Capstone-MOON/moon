@@ -11,6 +11,7 @@
     "postinstall": "patch-package"
   },
   "dependencies": {
+    "@gorhom/bottom-sheet": "^5.2.8",
     "@mj-studio/react-native-naver-map": "^2.7.0",
     "@react-native-async-storage/async-storage": "^3.0.1",
     "@react-native-voice/voice": "^3.2.4",
@@ -22,10 +23,12 @@
     "react-native": "0.84.1",
     "react-native-geolocation-service": "^5.3.1",
     "react-native-gesture-handler": "^2.30.0",
+    "react-native-reanimated": "^4.3.0",
     "react-native-safe-area-context": "^5.5.2",
     "react-native-screens": "^4.24.0",
     "react-native-tts": "^4.1.1",
     "react-native-vector-icons": "^10.3.0",
+    "react-native-worklets": "^0.8.1",
     "zustand": "^5.0.12"
   },
   "devDependencies": {
