@@ -16,10 +16,13 @@ import BottomSheet, { BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import Reanimated, { useAnimatedStyle, interpolate, useSharedValue } from 'react-native-reanimated';
 import { COLORS } from '../constants/colors';
+import { speak as ttsSpeak, stop as ttsStop } from '../services/ttsService';
 import { vibrateApproach, vibrateArrival, vibrateTurn } from '../services/hapticService';
 import { MOCK_ROUTE_RESPONSE } from '../mocks/mockRoute';
 import { useRouteStore } from '../stores/useRouteStore';
 import { useNavigationStore } from '../stores/useNavigationStore';
+import { useWebSocket } from '../hooks/useWebSocket';
+import { useLocation } from '../hooks/useLocation';
 import MapView from '../components/map/MapView';
 import RoutePolyline from '../components/map/RoutePolyline';
 import DpMarker from '../components/map/DpMarker';
@@ -90,13 +93,34 @@ export default function NavigationScreen({ navigation, route }: Props) {
   const routeData = useRouteStore(s => s.routeData);
   const setRouteData = useRouteStore(s => s.setRouteData);
   const { currentDpIndex, setCurrentDp, navigationState, trigger } = useNavigationStore();
+  const updateFromTracking = useNavigationStore(s => s.updateFromTracking);
   const isFocused = useIsFocused();
+
+  // GPS tracking
+  const { position, startTracking, stopTracking } = useLocation();
 
   const [localIndex, setLocalIndex] = useState(currentDpIndex);
   const [isNavigating, setIsNavigating] = useState(true);
   const [toastVisible, setToastVisible] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
   const [isRerouting, setIsRerouting] = useState(false);
+
+  const showError = useCallback((msg: string) => {
+    setToastMessage(msg);
+    setToastVisible(true);
+  }, []);
+
+  // WebSocket connection
+  const handleWsMessage = useCallback((data: unknown) => {
+    const camelData = toCamelCase(data) as Parameters<typeof updateFromTracking>[0];
+    updateFromTracking(camelData);
+  }, [updateFromTracking]);
+
+  const { connectionState, send, connect, disconnect } = useWebSocket({
+    url: 'ws://10.0.2.2:8080/api/tracking',
+    onMessage: handleWsMessage,
+    onError: (msg) => showError(msg),
+  });
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const rerouteCalledRef = useRef(false);
   const translateX = useRef(new Animated.Value(0)).current;
@@ -153,6 +177,37 @@ export default function NavigationScreen({ navigation, route }: Props) {
     }
   }, [localIndex, currentDP, isNavigating]);
 
+  // TTS on trigger change
+  const guidance = useNavigationStore(s => s.guidance);
+  useEffect(() => {
+    if (!trigger) { return; }
+    let text: string | null = null;
+    switch (trigger) {
+      case 'PRE_ALERT':
+        text = guidance?.preAlert ?? guidance?.primary ?? null;
+        break;
+      case 'ARRIVAL':
+        text = guidance?.primary ?? null;
+        break;
+      case 'CONFIRMATION':
+        text = '잘 가고 있어요';
+        break;
+      case 'DEVIATION_WARNING':
+        text = '경로를 벗어난 것 같아요';
+        break;
+      case 'REROUTING':
+        text = '경로를 다시 찾고 있어요';
+        break;
+      case 'RETURN_DETECTED':
+        text = '다시 돌아오고 있어요';
+        break;
+    }
+    if (text) {
+      ttsStop();
+      ttsSpeak(text);
+    }
+  }, [trigger, guidance]);
+
   // Auto-progress mock (pause when not focused)
   useEffect(() => {
     if (!isNavigating || isLastDP || !isFocused) { return; }
@@ -163,11 +218,6 @@ export default function NavigationScreen({ navigation, route }: Props) {
       if (timerRef.current) { clearTimeout(timerRef.current); }
     };
   }, [localIndex, isNavigating, isLastDP, isFocused, dpList.length]);
-
-  const showError = useCallback((msg: string) => {
-    setToastMessage(msg);
-    setToastVisible(true);
-  }, []);
 
   const handleReroute = useCallback(async () => {
     const routeId = routeData?.routeId;
@@ -193,13 +243,34 @@ export default function NavigationScreen({ navigation, route }: Props) {
     }
   }, [routeData?.routeId, isRerouting, currentDP?.location, showError, setRouteData]);
 
-  // Stop auto-progress when arrived via server state
+  // Send GPS to server via WebSocket when position updates
+  useEffect(() => {
+    if (!position || connectionState !== 'CONNECTED' || !routeData?.routeId) { return; }
+    send({
+      route_id: routeData.routeId,
+      latitude: position.latitude,
+      longitude: position.longitude,
+      timestamp: new Date().toISOString(),
+      speed: position.speed ?? 0,
+    });
+  }, [position, connectionState, routeData?.routeId, send]);
+
+  // Start WebSocket + GPS tracking on mount
+  useEffect(() => {
+    connect();
+    startTracking();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Stop auto-progress and tracking when arrived via server state
   useEffect(() => {
     if (navigationState === 'ARRIVED') {
       setIsNavigating(false);
       if (timerRef.current) { clearTimeout(timerRef.current); }
+      stopTracking();
+      disconnect();
     }
-  }, [navigationState]);
+  }, [navigationState, stopTracking, disconnect]);
 
   // Auto-trigger reroute on DEVIATION_CONFIRMED or REROUTING trigger
   useEffect(() => {
@@ -218,12 +289,13 @@ export default function NavigationScreen({ navigation, route }: Props) {
   const handleStop = useCallback(() => {
     setIsNavigating(false);
     if (timerRef.current) { clearTimeout(timerRef.current); }
-    // TODO: WebSocket 연결 후 disconnect() 추가
-    // TODO: GPS 추적 중이면 stopTracking() 호출
+    ttsStop();
+    stopTracking();
+    disconnect();
     useNavigationStore.getState().reset();
     useRouteStore.getState().reset();
     navigation.popToTop();
-  }, [navigation]);
+  }, [navigation, stopTracking, disconnect]);
 
   const handlePrev = () => {
     if (localIndex > 0) { setLocalIndex(prev => prev - 1); }

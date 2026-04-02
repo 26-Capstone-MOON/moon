@@ -15,7 +15,11 @@
       "Bash(npx react-native-asset:*)",
       "Bash(ls \"C:\\\\Users\\\\ime\\\\26_Capstone\\\\moon\\\\frontend\\\\MoonApp\\\\android\\\\app\\\\src\\\\main\\\\assets\\\\fonts\\\\SourGummy\"*)",
       "Bash(grep:*)",
-      "Bash(done)"
+      "Bash(done)",
+      "Bash(npx react-native:*)",
+      "Bash(./gradlew assembleDebug)",
+      "Bash(adb install:*)",
+      "Bash(./gradlew assembleDebug --stacktrace)"
     ]
   }
 }
