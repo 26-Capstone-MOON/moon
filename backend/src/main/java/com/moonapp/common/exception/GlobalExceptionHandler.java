@@ -3,7 +3,9 @@ package com.moonapp.common.exception;
 import com.moonapp.common.dto.ApiResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ResponseEntity;
+import org.springframework.lang.NonNull;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -19,7 +21,7 @@ public class GlobalExceptionHandler {
         ErrorCode errorCode = exception.getErrorCode();
 
         return ResponseEntity
-            .status(errorCode.getHttpStatus())
+            .status(toStatusCode(errorCode))
             .body(ApiResponse.error(errorCode.getCode(), errorCode.getMessage()));
     }
 
@@ -30,7 +32,7 @@ public class GlobalExceptionHandler {
         ErrorCode errorCode = ErrorCode.INVALID_REQUEST;
 
         return ResponseEntity
-            .status(errorCode.getHttpStatus())
+            .status(toStatusCode(errorCode))
             .body(ApiResponse.error(errorCode.getCode(), errorCode.getMessage()));
     }
 
@@ -41,7 +43,7 @@ public class GlobalExceptionHandler {
         log.warn("Resource not found: {}", exception.getResourcePath());
 
         return ResponseEntity
-            .status(ErrorCode.ROUTE_NOT_FOUND.getHttpStatus())
+            .status(toStatusCode(ErrorCode.ROUTE_NOT_FOUND))
             .body(ApiResponse.error("ENDPOINT_NOT_FOUND", "요청한 URL을 찾을 수 없음"));
     }
 
@@ -52,7 +54,11 @@ public class GlobalExceptionHandler {
         ErrorCode errorCode = ErrorCode.INTERNAL_SERVER_ERROR;
 
         return ResponseEntity
-            .status(errorCode.getHttpStatus())
+            .status(toStatusCode(errorCode))
             .body(ApiResponse.error(errorCode.getCode(), errorCode.getMessage()));
+    }
+
+    private @NonNull HttpStatusCode toStatusCode(ErrorCode errorCode) {
+        return HttpStatusCode.valueOf(errorCode.getHttpStatus().value());
     }
 }

@@ -1,0 +1,14 @@
+{
+  "properties": [
+    {
+      "name": "services.python.base-url",
+      "type": "java.lang.String",
+      "description": "Base URL for the Python route service."
+    },
+    {
+      "name": "services.deviation.base-url",
+      "type": "java.lang.String",
+      "description": "Base URL for the Python deviation service."
+    }
+  ]
+}
