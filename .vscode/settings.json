@@ -1,3 +1,13 @@
 {
-    "java.configuration.updateBuildConfiguration": "automatic"
+    "java.configuration.updateBuildConfiguration": "automatic",
+    "java.compile.nullAnalysis.mode": "automatic",
+    "java.jdt.ls.java.home": "/mnt/c/Users/ime/Documents/GitHub/moon/.vscode/jdk-17",
+    "java.import.gradle.java.home": "/mnt/c/Users/ime/Documents/GitHub/moon/.vscode/jdk-17",
+    "java.configuration.runtimes": [
+        {
+            "name": "JavaSE-17",
+            "path": "/mnt/c/Users/ime/Documents/GitHub/moon/.vscode/jdk-17",
+            "default": true
+        }
+    ]
 }
