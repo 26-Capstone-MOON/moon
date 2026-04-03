@@ -177,10 +177,15 @@ export default function NavigationScreen({ navigation, route }: Props) {
     }
   }, [localIndex, currentDP, isNavigating]);
 
-  // TTS on trigger change
+  // TTS on trigger change (deduplicated)
   const guidance = useNavigationStore(s => s.guidance);
+  const lastSpokenTrigger = useRef<string | null>(null);
   useEffect(() => {
-    if (!trigger) { return; }
+    if (!trigger) {
+      lastSpokenTrigger.current = null;
+      return;
+    }
+    if (lastSpokenTrigger.current === trigger) { return; }
     let text: string | null = null;
     switch (trigger) {
       case 'PRE_ALERT':
@@ -205,6 +210,7 @@ export default function NavigationScreen({ navigation, route }: Props) {
     if (text) {
       ttsStop();
       ttsSpeak(text);
+      lastSpokenTrigger.current = trigger;
     }
   }, [trigger, guidance]);
 
