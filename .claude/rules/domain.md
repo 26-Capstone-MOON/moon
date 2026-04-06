@@ -146,7 +146,7 @@ Left/right: bearing-based, recorded in `position` field. Opposite-side NOT filte
 ## Panorama + Vision (STEP 3)
 
 - Server generates `panoramaRequest` → client executes Naver Panorama API
-- Regular DP: 3 directions / Virtual DP: front only
+- All DPs (including Virtual DP): 3 directions (front + left + right)
 - turnType-based isPrimary: left turn→left, right turn→right, other→front
 - Vision validation: if turnType facility not visible in primary → distance-based fallback
 
