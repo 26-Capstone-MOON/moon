@@ -8,6 +8,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import WebView from 'react-native-webview';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/Ionicons';
 import type { StackScreenProps } from '@react-navigation/stack';
@@ -53,6 +54,38 @@ const PANO_HEIGHT_MIN = 72;
 const PANO_HEIGHT_MID = 140;
 const PANO_HEIGHT_MAX = 260;
 
+const NCP_CLIENT_ID = 'p1w5pdggbh';
+
+function buildPanoramaHtml(lat: number, lng: number, pan: number): string {
+  return `<!DOCTYPE html>
+<html><head>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<script src="https://oapi.map.naver.com/openapi/v3/maps.js?ncpClientId=${NCP_CLIENT_ID}&submodules=panorama"></script>
+<style>*{margin:0;padding:0}html,body,#pano{width:100%;height:100%;overflow:hidden}</style>
+</head><body>
+<div id="pano"></div>
+<script>
+var pos=new naver.maps.LatLng(${lat},${lng});
+var pano=new naver.maps.Panorama('pano',{
+  position:pos,
+  pov:{pan:${pan},tilt:0,fov:100},
+  flightSpot:false,
+  aroundControl:true,
+  zoomControl:false
+});
+naver.maps.Event.addListener(pano,'error',function(){
+  document.getElementById('pano').innerHTML='<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#999;font-size:13px">파노라마 없음</div>';
+});
+</script>
+</body></html>`;
+}
+
+function getPrimaryPan(dp: DecisionPoint): number | null {
+  if (!dp.panoramaRequest?.directions) { return null; }
+  const primary = dp.panoramaRequest.directions.find(d => d.isPrimary);
+  return primary ? primary.pan : null;
+}
+
 function getDpIcon(dpType: string): string {
   switch (dpType) {
     case 'DIRECTION_CHANGE': return 'arrow-forward';
@@ -78,17 +111,25 @@ function getDpLabel(dpType: string): string {
 }
 
 function getRouteCoordinates(lineString: any): Location[] {
-  if (!lineString?.coordinates) { return []; }
-  return lineString.coordinates.map((c: number[]) => ({
-    latitude: c[1],
-    longitude: c[0],
-  }));
+  if (Array.isArray(lineString)) {
+    return lineString.map((pt: any) => ({
+      latitude: pt.latitude,
+      longitude: pt.longitude,
+    }));
+  }
+  if (lineString?.coordinates) {
+    return lineString.coordinates.map((c: number[]) => ({
+      latitude: c[1],
+      longitude: c[0],
+    }));
+  }
+  return [];
 }
 
 export default function NavigationScreen({ navigation, route }: Props) {
   const { departure, destination, dpList: paramDpList } = route.params;
-  const storeDpList = useRouteStore(s => s.decisionPoints);
-  const dpList = storeDpList.length > 0 ? storeDpList : (paramDpList.length > 0 ? paramDpList : MOCK_ROUTE_RESPONSE.decisionPoints);
+  const storeDpList = useRouteStore(s => s.decisionPoints) ?? [];
+  const dpList = storeDpList.length > 0 ? storeDpList : (paramDpList?.length > 0 ? paramDpList : MOCK_ROUTE_RESPONSE.decisionPoints);
 
   const routeData = useRouteStore(s => s.routeData);
   const setRouteData = useRouteStore(s => s.setRouteData);
@@ -219,7 +260,7 @@ export default function NavigationScreen({ navigation, route }: Props) {
     if (!isNavigating || isLastDP || !isFocused) { return; }
     timerRef.current = setTimeout(() => {
       setLocalIndex(prev => Math.min(prev + 1, dpList.length - 1));
-    }, 5000);
+    }, 15000);
     return () => {
       if (timerRef.current) { clearTimeout(timerRef.current); }
     };
@@ -452,11 +493,32 @@ export default function NavigationScreen({ navigation, route }: Props) {
             handleIndicatorStyle={styles.sheetHandle}
           >
             <BottomSheetScrollView style={styles.sheetContent} showsVerticalScrollIndicator={false}>
-              {/* Panorama placeholder */}
+              {/* Panorama */}
               <View style={styles.panoramaSection}>
                 <Reanimated.View style={[styles.panoramaPlaceholder, panoramaAnimStyle]}>
-                  <Icon name="image-outline" size={20} color="#B0B0B0" />
-                  <Text style={styles.panoramaText}>Street View</Text>
+                  {currentDP && getPrimaryPan(currentDP) !== null ? (
+                    <WebView
+                      key={`pano-${currentDP.dpId}`}
+                      source={{
+                        html: buildPanoramaHtml(
+                          currentDP.panoramaRequest!.location.latitude,
+                          currentDP.panoramaRequest!.location.longitude,
+                          getPrimaryPan(currentDP)!,
+                        ),
+                      }}
+                      style={styles.panoramaImage}
+                      scrollEnabled={false}
+                      nestedScrollEnabled={true}
+                      javaScriptEnabled={true}
+                      domStorageEnabled={true}
+                      originWhitelist={['*']}
+                    />
+                  ) : (
+                    <>
+                      <Icon name="image-outline" size={20} color="#B0B0B0" />
+                      <Text style={styles.panoramaText}>Street View</Text>
+                    </>
+                  )}
                 </Reanimated.View>
               </View>
 
@@ -710,6 +772,12 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#E8E8E8',
     borderStyle: 'dashed',
+    overflow: 'hidden',
+  },
+  panoramaImage: {
+    flex: 1,
+    borderRadius: 14,
+    overflow: 'hidden',
   },
   panoramaText: {
     fontSize: 13,

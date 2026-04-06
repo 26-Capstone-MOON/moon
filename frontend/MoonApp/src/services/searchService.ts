@@ -1,7 +1,7 @@
 import { KAKAO_REST_API_KEY } from '../constants/apiKeys';
 import type { SearchResult } from '../types/navigation';
 
-const USE_MOCK = true;
+const USE_MOCK = false;
 
 const MOCK_RESULTS: SearchResult[] = [
   {

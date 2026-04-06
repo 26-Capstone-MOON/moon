@@ -98,7 +98,14 @@ export const MOCK_ROUTE_RESPONSE: RouteData = {
         action: null,
       },
       selectedLandmark: null,
-      panoramaRequest: null,
+      panoramaRequest: {
+        location: { latitude: 37.5710, longitude: 126.9783 },
+        directions: [
+          { pan: 45, label: 'FRONT', isPrimary: true },
+          { pan: -45, label: 'LEFT', isPrimary: false },
+          { pan: 135, label: 'RIGHT', isPrimary: false },
+        ],
+      },
     },
     {
       dpId: 'dp-1',
@@ -120,7 +127,14 @@ export const MOCK_ROUTE_RESPONSE: RouteData = {
         matchStatus: 'POI_ONLY',
         isOpen: true,
       },
-      panoramaRequest: null,
+      panoramaRequest: {
+        location: { latitude: 37.5696, longitude: 126.9844 },
+        directions: [
+          { pan: 60, label: 'FRONT', isPrimary: false },
+          { pan: -30, label: 'LEFT', isPrimary: false },
+          { pan: 150, label: 'RIGHT', isPrimary: true },
+        ],
+      },
     },
     {
       dpId: 'dp-2',
@@ -142,7 +156,12 @@ export const MOCK_ROUTE_RESPONSE: RouteData = {
         matchStatus: 'MATCHED',
         isOpen: true,
       },
-      panoramaRequest: null,
+      panoramaRequest: {
+        location: { latitude: 37.5705, longitude: 126.9860 },
+        directions: [
+          { pan: 30, label: 'FRONT', isPrimary: true },
+        ],
+      },
     },
     {
       dpId: 'dp-3',
@@ -164,7 +183,14 @@ export const MOCK_ROUTE_RESPONSE: RouteData = {
         matchStatus: 'POI_ONLY',
         isOpen: true,
       },
-      panoramaRequest: null,
+      panoramaRequest: {
+        location: { latitude: 37.5718, longitude: 126.9875 },
+        directions: [
+          { pan: 20, label: 'FRONT', isPrimary: true },
+          { pan: -70, label: 'LEFT', isPrimary: false },
+          { pan: 110, label: 'RIGHT', isPrimary: false },
+        ],
+      },
     },
     {
       dpId: 'dp-4',
@@ -186,7 +212,14 @@ export const MOCK_ROUTE_RESPONSE: RouteData = {
         matchStatus: 'POI_ONLY',
         isOpen: true,
       },
-      panoramaRequest: null,
+      panoramaRequest: {
+        location: { latitude: 37.5728, longitude: 126.9888 },
+        directions: [
+          { pan: 15, label: 'FRONT', isPrimary: true },
+          { pan: -75, label: 'LEFT', isPrimary: false },
+          { pan: 105, label: 'RIGHT', isPrimary: false },
+        ],
+      },
     },
     {
       dpId: 'dp-5',
@@ -208,7 +241,14 @@ export const MOCK_ROUTE_RESPONSE: RouteData = {
         matchStatus: 'MATCHED',
         isOpen: true,
       },
-      panoramaRequest: null,
+      panoramaRequest: {
+        location: { latitude: 37.5735, longitude: 126.9895 },
+        directions: [
+          { pan: 350, label: 'FRONT', isPrimary: false },
+          { pan: 260, label: 'LEFT', isPrimary: true },
+          { pan: 80, label: 'RIGHT', isPrimary: false },
+        ],
+      },
     },
     {
       dpId: 'dp-6',
@@ -230,7 +270,14 @@ export const MOCK_ROUTE_RESPONSE: RouteData = {
         matchStatus: 'MATCHED',
         isOpen: true,
       },
-      panoramaRequest: null,
+      panoramaRequest: {
+        location: { latitude: 37.5742, longitude: 126.9902 },
+        directions: [
+          { pan: 340, label: 'FRONT', isPrimary: true },
+          { pan: 250, label: 'LEFT', isPrimary: false },
+          { pan: 70, label: 'RIGHT', isPrimary: false },
+        ],
+      },
     },
   ],
 };

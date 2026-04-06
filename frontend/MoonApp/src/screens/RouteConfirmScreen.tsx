@@ -26,12 +26,22 @@ import { formatTime } from '../utils/formatTime';
 
 type Props = StackScreenProps<RootStackParamList, 'RouteConfirm'>;
 
-/** GeoJSON [lng, lat] → { latitude, longitude } */
-function geoJsonToCoords(lineString: { coordinates: number[][] }): Location[] {
-  return lineString.coordinates.map(([lng, lat]) => ({
-    latitude: lat,
-    longitude: lng,
-  }));
+/** Convert routeLineString to Location[].
+ *  Handles both Python format [{latitude, longitude}] and GeoJSON {coordinates: [[lng, lat]]}. */
+function toCoords(lineString: unknown): Location[] {
+  if (Array.isArray(lineString)) {
+    return lineString.map((pt: any) => ({
+      latitude: pt.latitude,
+      longitude: pt.longitude,
+    }));
+  }
+  if (lineString && typeof lineString === 'object' && 'coordinates' in lineString) {
+    return (lineString as { coordinates: number[][] }).coordinates.map(([lng, lat]) => ({
+      latitude: lat,
+      longitude: lng,
+    }));
+  }
+  return [];
 }
 
 export default function RouteConfirmScreen({ navigation, route }: Props) {
@@ -40,7 +50,7 @@ export default function RouteConfirmScreen({ navigation, route }: Props) {
   const routeData = useRouteStore((s) => s.routeData);
   const loading = useRouteStore((s) => s.loading);
   const error = useRouteStore((s) => s.error);
-  const decisionPoints = useRouteStore((s) => s.decisionPoints);
+  const decisionPoints = useRouteStore((s) => s.decisionPoints) ?? [];
 
   const [toastVisible, setToastVisible] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
@@ -60,7 +70,7 @@ export default function RouteConfirmScreen({ navigation, route }: Props) {
 
   const polylineCoords = useMemo(() => {
     if (!routeData?.routeLineString) return [];
-    return geoJsonToCoords(routeData.routeLineString);
+    return toCoords(routeData.routeLineString);
   }, [routeData]);
 
   const mapCamera = useMemo(() => ({
