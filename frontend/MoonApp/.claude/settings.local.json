@@ -11,7 +11,15 @@
       "Bash(./gradlew clean:*)",
       "Bash(./gradlew app:installDebug -PreactNativeDevServerPort=8081)",
       "Bash(./gradlew app:installDebug)",
-      "Bash(adb pull:*)"
+      "Bash(adb pull:*)",
+      "Bash(npx react-native-asset:*)",
+      "Bash(ls \"C:\\\\Users\\\\ime\\\\26_Capstone\\\\moon\\\\frontend\\\\MoonApp\\\\android\\\\app\\\\src\\\\main\\\\assets\\\\fonts\\\\SourGummy\"*)",
+      "Bash(grep:*)",
+      "Bash(done)",
+      "Bash(npx react-native:*)",
+      "Bash(./gradlew assembleDebug)",
+      "Bash(adb install:*)",
+      "Bash(./gradlew assembleDebug --stacktrace)"
     ]
   }
 }

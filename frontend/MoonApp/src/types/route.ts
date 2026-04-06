@@ -3,19 +3,58 @@ export interface Location {
   longitude: number;
 }
 
-export interface Landmark {
+export interface Guidance {
+  primary: string;
+  preAlert: string | null;
+  action:
+    | 'RIGHT_TURN'
+    | 'LEFT_TURN'
+    | 'U_TURN'
+    | 'CROSSWALK'
+    | 'STAIRS_UP'
+    | 'STAIRS_DOWN'
+    | 'OVERPASS'
+    | 'UNDERPASS'
+    | 'ELEVATOR'
+    | null;
+}
+
+export interface SelectedLandmark {
   name: string;
+  categoryCode: string;
   position: 'LEFT' | 'RIGHT' | 'FRONT';
-  category?: string;
+  distance: number;
+  score: number;
+  matchStatus: 'MATCHED' | 'POI_ONLY' | 'VISION_ONLY';
+  isOpen: boolean;
+}
+
+export interface PanoramaDirection {
+  pan: number;
+  label: 'FRONT' | 'LEFT' | 'RIGHT';
+  isPrimary: boolean;
+}
+
+export interface PanoramaRequest {
+  location: Location;
+  directions: PanoramaDirection[];
 }
 
 export interface DecisionPoint {
   dpId: string;
-  dpType: string;
+  dpType:
+    | 'DEPARTURE'
+    | 'ARRIVAL'
+    | 'DIRECTION_CHANGE'
+    | 'CROSSWALK'
+    | 'VERTICAL_MOVE'
+    | 'VIRTUAL';
+  turnType: number | null;
   location: Location;
-  guideText: string;
-  landmarks: Landmark[];
-  panoramaUrl?: string;
+  distanceFromStart: number;
+  guidance: Guidance;
+  selectedLandmark: SelectedLandmark | null;
+  panoramaRequest: PanoramaRequest | null;
 }
 
 export interface RouteData {

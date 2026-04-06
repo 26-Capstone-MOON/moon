@@ -30,6 +30,11 @@ allprojects {
             url = uri("https://repository.map.naver.com/archive/maven")
         }
     }
+    configurations.all {
+        resolutionStrategy {
+            force "com.google.android.gms:play-services-location:21.0.1"
+        }
+    }
 }
 
 apply plugin: "com.facebook.react.rootproject"

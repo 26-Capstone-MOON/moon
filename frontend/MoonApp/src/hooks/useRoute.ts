@@ -1,5 +1,6 @@
 import { useCallback } from 'react';
 import { fetchRoute, fetchRouteById } from '../services/routeService';
+import { extractErrorMessage } from '../utils/errorHandler';
 import { useRouteStore } from '../stores/useRouteStore';
 import type { Place } from '../types/navigation';
 
@@ -21,8 +22,7 @@ export function useRoute(): UseRouteReturn {
         const data = await fetchRoute(origin, destination);
         setRouteData(data);
       } catch (e: unknown) {
-        const message = e instanceof Error ? e.message : '경로 요청 실패';
-        setError(message);
+        setError(extractErrorMessage(e));
       } finally {
         setLoading(false);
       }
@@ -38,8 +38,7 @@ export function useRoute(): UseRouteReturn {
         const data = await fetchRouteById(routeId);
         setRouteData(data);
       } catch (e: unknown) {
-        const message = e instanceof Error ? e.message : '경로 조회 실패';
-        setError(message);
+        setError(extractErrorMessage(e));
       } finally {
         setLoading(false);
       }

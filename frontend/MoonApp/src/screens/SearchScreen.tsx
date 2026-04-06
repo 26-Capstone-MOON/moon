@@ -39,9 +39,9 @@ function haversineMeters(
 
 const DEFAULT_ORIGIN: Place = {
   name: '현재 위치',
-  address: '서울특별시 중구 세종대로 110',
-  lat: 37.5665,
-  lng: 126.978,
+  address: '서울특별시 종로구 세종대로 172',
+  lat: 37.5710,
+  lng: 126.9783,
 };
 
 export default function SearchScreen({ navigation, route }: Props) {
@@ -127,17 +127,10 @@ export default function SearchScreen({ navigation, route }: Props) {
   const handleConfirm = () => {
     if (!selectedPlace) { return; }
 
-    if (isDeparture) {
-      navigation.navigate('Home', {
-        selectedPlace,
-        selectionType: 'departure',
-      });
-    } else {
-      navigation.navigate('RouteConfirm', {
-        departure: DEFAULT_ORIGIN,
-        destination: selectedPlace,
-      });
-    }
+    navigation.navigate('Home', {
+      selectedPlace,
+      selectionType: isDeparture ? 'departure' : 'destination',
+    });
   };
 
   const handleDismiss = () => {
@@ -225,6 +218,7 @@ export default function SearchScreen({ navigation, route }: Props) {
         ListEmptyComponent={!loading ? renderEmpty : null}
         ItemSeparatorComponent={renderSeparator}
         keyboardShouldPersistTaps="handled"
+        style={styles.resultList}
       />
 
       {/* Confirm Modal */}
@@ -238,7 +232,7 @@ export default function SearchScreen({ navigation, route }: Props) {
             <View style={styles.modalHandle} />
 
             <Text style={styles.modalQuestion}>
-              이 주소로 안내를 시작할까요?
+              {isDeparture ? '이 주소를 출발지로 설정할까요?' : '이 주소를 도착지로 설정할까요?'}
             </Text>
 
             <View style={styles.modalPlaceInfo}>
@@ -269,7 +263,7 @@ export default function SearchScreen({ navigation, route }: Props) {
               activeOpacity={0.8}
               onPress={handleConfirm}>
               <Text style={styles.confirmBtnText}>
-                {isDeparture ? '출발지로 선택' : '네, 안내 시작'}
+                {isDeparture ? '출발지로 선택' : '도착지로 선택'}
               </Text>
             </TouchableOpacity>
 
@@ -315,7 +309,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginHorizontal: 16,
     marginBottom: 8,
-    backgroundColor: '#F2F3F5',
+    backgroundColor: COLORS.card,
     borderRadius: 12,
     paddingHorizontal: 14,
     height: 48,
@@ -333,6 +327,12 @@ const styles = StyleSheet.create({
   micBtn: {
     marginLeft: 6,
     padding: 2,
+  },
+  resultList: {
+    backgroundColor: COLORS.card,
+    marginHorizontal: 16,
+    borderRadius: 14,
+    flex: 1,
   },
   separator: {
     height: 0.5,
@@ -362,7 +362,7 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   modalSheet: {
-    backgroundColor: COLORS.background,
+    backgroundColor: COLORS.card,
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     paddingHorizontal: 24,
@@ -408,7 +408,7 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   categoryTag: {
-    backgroundColor: '#EBF2FC',
+    backgroundColor: '#E8ECF8',
     paddingHorizontal: 8,
     paddingVertical: 2,
     borderRadius: 6,

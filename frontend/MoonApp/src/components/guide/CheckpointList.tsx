@@ -42,10 +42,10 @@ export default function CheckpointList({ dpList, currentIndex }: Props) {
                 isPassed && styles.labelPassed,
                 isCurrent && styles.labelCurrent,
               ]}>
-                {dp.guideText}
+                {dp.guidance?.primary}
               </Text>
-              {dp.landmarks[0] && (
-                <Text style={styles.landmark}>{dp.landmarks[0].name}</Text>
+              {dp.selectedLandmark && (
+                <Text style={styles.landmark}>{dp.selectedLandmark.name}</Text>
               )}
             </View>
           </View>

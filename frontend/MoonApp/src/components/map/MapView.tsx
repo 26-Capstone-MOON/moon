@@ -12,7 +12,7 @@ export default function MapView({ style, children, ...rest }: Props) {
     <NaverMapView
       style={[styles.map, style]}
       isShowCompass
-      isShowZoomControls={false}
+      isShowZoomControls
       isShowLocationButton={false}
       {...rest}>
       {children}

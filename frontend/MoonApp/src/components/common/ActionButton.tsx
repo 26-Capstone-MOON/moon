@@ -52,7 +52,7 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.primary,
   },
   secondary: {
-    backgroundColor: COLORS.background,
+    backgroundColor: COLORS.card,
     borderWidth: 1,
     borderColor: COLORS.primary,
   },

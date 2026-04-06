@@ -19,12 +19,18 @@ export const useRouteStore = create<RouteState>((set) => ({
   loading: false,
   error: null,
 
-  setRouteData: (data) =>
+  setRouteData: (data) => {
+    if (!data) {
+      console.error('[RouteStore] setRouteData called with null/undefined');
+      set({ error: '경로 데이터가 비어있습니다', loading: false });
+      return;
+    }
     set({
       routeData: data,
-      decisionPoints: data.decisionPoints,
+      decisionPoints: data.decisionPoints ?? [],
       error: null,
-    }),
+    });
+  },
 
   setLoading: (loading) => set({ loading }),
 

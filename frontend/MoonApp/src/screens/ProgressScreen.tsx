@@ -1,8 +1,5 @@
-import React, { useRef } from 'react';
+import React from 'react';
 import {
-  Animated,
-  Dimensions,
-  PanResponder,
   ScrollView,
   StyleSheet,
   Text,
@@ -22,9 +19,6 @@ import type { RootStackParamList } from '../types/navigation';
 import type { DecisionPoint } from '../types/route';
 
 type Props = StackScreenProps<RootStackParamList, 'Progress'>;
-
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const SWIPE_THRESHOLD = SCREEN_WIDTH * 0.25;
 
 function getDpIcon(dpType: string): string {
   switch (dpType) {
@@ -69,39 +63,8 @@ export default function ProgressScreen({ navigation, route }: Props) {
   const distanceRemaining = Math.round(totalDistance * remainingRatio);
   const timeRemaining = Math.round(totalTime * remainingRatio);
 
-  const translateX = useRef(new Animated.Value(0)).current;
-
-  // Swipe right to go back to Navigation
-  const panResponder = useRef(
-    PanResponder.create({
-      onMoveShouldSetPanResponder: (_, gs) =>
-        Math.abs(gs.dx) > 20 && Math.abs(gs.dx) > Math.abs(gs.dy),
-      onPanResponderMove: (_, gs) => {
-        if (gs.dx > 0) { translateX.setValue(gs.dx); }
-      },
-      onPanResponderRelease: (_, gs) => {
-        if (gs.dx > SWIPE_THRESHOLD) {
-          Animated.timing(translateX, {
-            toValue: SCREEN_WIDTH,
-            duration: 200,
-            useNativeDriver: true,
-          }).start(() => {
-            navigation.goBack();
-          });
-        } else {
-          Animated.spring(translateX, {
-            toValue: 0,
-            useNativeDriver: true,
-          }).start();
-        }
-      },
-    }),
-  ).current;
-
   return (
-    <Animated.View
-      style={[styles.root, { transform: [{ translateX }] }]}
-      {...panResponder.panHandlers}>
+    <View style={styles.root}>
       <SafeAreaView style={styles.safe}>
         {/* Header */}
         <View style={styles.header}>
@@ -200,13 +163,13 @@ export default function ProgressScreen({ navigation, route }: Props) {
                       isPassed && styles.textPassedGuide,
                     ]}
                     numberOfLines={2}>
-                    {dp.guideText}
+                    {dp.guidance?.primary}
                   </Text>
-                  {dp.landmarks[0] && (
+                  {dp.selectedLandmark && (
                     <View style={styles.checkpointLandmark}>
                       <Icon name="location-outline" size={11} color={COLORS.subtext} />
                       <Text style={styles.checkpointLandmarkText}>
-                        {dp.landmarks[0].name}
+                        {dp.selectedLandmark.name}
                       </Text>
                     </View>
                   )}
@@ -235,20 +198,15 @@ export default function ProgressScreen({ navigation, route }: Props) {
           </View>
         </View>
 
-        {/* Swipe hint */}
-        <View style={styles.swipeHint}>
-          <Text style={styles.swipeHintText}>스와이프하여 내비게이션으로 돌아가기</Text>
-          <Icon name="chevron-forward" size={12} color={COLORS.subtext} />
-        </View>
       </SafeAreaView>
-    </Animated.View>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: '#F7F8FA',
+    backgroundColor: COLORS.background,
   },
   safe: {
     flex: 1,
@@ -260,7 +218,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 16,
     paddingVertical: 12,
-    backgroundColor: COLORS.background,
+    backgroundColor: COLORS.card,
     elevation: 2,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
@@ -290,7 +248,7 @@ const styles = StyleSheet.create({
   summaryCard: {
     margin: 16,
     padding: 20,
-    backgroundColor: COLORS.background,
+    backgroundColor: COLORS.card,
     borderRadius: 18,
     elevation: 3,
     shadowColor: '#000',
@@ -310,7 +268,7 @@ const styles = StyleSheet.create({
     borderColor: COLORS.primary,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#EBF2FC',
+    backgroundColor: '#E8ECF8',
   },
   progressPercent: {
     fontSize: 22,
@@ -399,7 +357,7 @@ const styles = StyleSheet.create({
     marginLeft: 10,
     marginBottom: 12,
     padding: 14,
-    backgroundColor: COLORS.background,
+    backgroundColor: COLORS.card,
     borderRadius: 14,
     elevation: 1,
     shadowColor: '#000',
@@ -469,7 +427,7 @@ const styles = StyleSheet.create({
     marginHorizontal: 16,
     marginBottom: 4,
     padding: 16,
-    backgroundColor: COLORS.background,
+    backgroundColor: COLORS.card,
     borderRadius: 16,
     elevation: 3,
     shadowColor: '#000',
@@ -499,17 +457,4 @@ const styles = StyleSheet.create({
     backgroundColor: '#E0E0E0',
   },
 
-  // Swipe hint
-  swipeHint: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 4,
-    paddingVertical: 8,
-    marginBottom: 4,
-  },
-  swipeHintText: {
-    fontSize: 11,
-    color: COLORS.subtext,
-  },
 });

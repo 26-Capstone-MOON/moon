@@ -14,9 +14,9 @@ interface Props {
 export default function RoutePolyline({
   coordinates,
   progress = 0,
-  color = COLORS.primary,
-  passedColor = '#B0C4DE',
-  width = 5,
+  color = 'rgba(25, 25, 112, 0.4)',
+  passedColor = 'rgba(25, 25, 112, 0.2)',
+  width = 4,
 }: Props) {
   if (coordinates.length < 2) {
     return null;

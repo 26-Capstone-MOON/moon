@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ScrollView,
   StyleSheet,
@@ -17,6 +17,7 @@ import MapView from '../components/map/MapView';
 import RoutePolyline from '../components/map/RoutePolyline';
 import DpMarker from '../components/map/DpMarker';
 import LoadingOverlay from '../components/common/LoadingOverlay';
+import ErrorToast from '../components/common/ErrorToast';
 import ActionButton from '../components/common/ActionButton';
 import type { RootStackParamList } from '../types/navigation';
 import type { Location } from '../types/route';
@@ -25,12 +26,22 @@ import { formatTime } from '../utils/formatTime';
 
 type Props = StackScreenProps<RootStackParamList, 'RouteConfirm'>;
 
-/** GeoJSON [lng, lat] → { latitude, longitude } */
-function geoJsonToCoords(lineString: { coordinates: number[][] }): Location[] {
-  return lineString.coordinates.map(([lng, lat]) => ({
-    latitude: lat,
-    longitude: lng,
-  }));
+/** Convert routeLineString to Location[].
+ *  Handles both Python format [{latitude, longitude}] and GeoJSON {coordinates: [[lng, lat]]}. */
+function toCoords(lineString: unknown): Location[] {
+  if (Array.isArray(lineString)) {
+    return lineString.map((pt: any) => ({
+      latitude: pt.latitude,
+      longitude: pt.longitude,
+    }));
+  }
+  if (lineString && typeof lineString === 'object' && 'coordinates' in lineString) {
+    return (lineString as { coordinates: number[][] }).coordinates.map(([lng, lat]) => ({
+      latitude: lat,
+      longitude: lng,
+    }));
+  }
+  return [];
 }
 
 export default function RouteConfirmScreen({ navigation, route }: Props) {
@@ -39,15 +50,27 @@ export default function RouteConfirmScreen({ navigation, route }: Props) {
   const routeData = useRouteStore((s) => s.routeData);
   const loading = useRouteStore((s) => s.loading);
   const error = useRouteStore((s) => s.error);
-  const decisionPoints = useRouteStore((s) => s.decisionPoints);
+  const decisionPoints = useRouteStore((s) => s.decisionPoints) ?? [];
+
+  const [toastVisible, setToastVisible] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
 
   useEffect(() => {
     loadRoute(departure, destination);
   }, [departure, destination, loadRoute]);
 
+  useEffect(() => {
+    if (error) {
+      setToastMessage(error);
+      setToastVisible(true);
+    }
+  }, [error]);
+
+  const handleDismissToast = useCallback(() => setToastVisible(false), []);
+
   const polylineCoords = useMemo(() => {
     if (!routeData?.routeLineString) return [];
-    return geoJsonToCoords(routeData.routeLineString);
+    return toCoords(routeData.routeLineString);
   }, [routeData]);
 
   const mapCamera = useMemo(() => ({
@@ -97,11 +120,6 @@ export default function RouteConfirmScreen({ navigation, route }: Props) {
           </Text>
         </View>
 
-        {/* Error */}
-        {error && (
-          <Text style={styles.errorText}>{error}</Text>
-        )}
-
         {/* Naver Map */}
         <View style={styles.mapContainer}>
           <MapView initialCamera={mapCamera}>
@@ -119,7 +137,7 @@ export default function RouteConfirmScreen({ navigation, route }: Props) {
               longitude={departure.lng}
               width={24}
               height={24}
-              caption={{ text: '출발', textSize: 12, color: '#34C759' }}
+              caption={{ text: '출발', textSize: 12, color: '#191970' }}
             />
 
             {/* Destination marker (red) */}
@@ -128,7 +146,7 @@ export default function RouteConfirmScreen({ navigation, route }: Props) {
               longitude={destination.lng}
               width={24}
               height={24}
-              caption={{ text: '도착', textSize: 12, color: '#FF3B30' }}
+              caption={{ text: '도착', textSize: 12, color: '#3939A6' }}
             />
           </MapView>
         </View>
@@ -136,13 +154,16 @@ export default function RouteConfirmScreen({ navigation, route }: Props) {
         {/* DP Timeline */}
         <View style={styles.timeline}>
           {/* Start node */}
-          <TimelineNode
-            icon="ellipse"
-            iconColor="#34C759"
-            label={departure.name}
-            sub="출발지에서 출발"
-            showLine
-          />
+          <View style={styles.endpointRow}>
+            <View style={styles.endpointLeft}>
+              <View style={styles.departureDot} />
+              <View style={styles.endpointLine} />
+            </View>
+            <View style={styles.endpointRight}>
+              <Text style={styles.endpointLabel}>현재 위치</Text>
+              <Text style={styles.endpointSub}>출발지에서 출발</Text>
+            </View>
+          </View>
 
           {decisionPoints.length === 0 && !loading ? (
             <TimelineNode
@@ -158,21 +179,23 @@ export default function RouteConfirmScreen({ navigation, route }: Props) {
               <TimelineNode
                 key={dp.dpId}
                 number={index + 1}
-                label={dp.guideText || '안내 정보 로딩 중...'}
-                sub={dp.landmarks[0]?.name || ''}
+                label={dp.guidance?.primary || '안내 정보 로딩 중...'}
+                sub={dp.selectedLandmark?.name || ''}
                 showLine={index < decisionPoints.length - 1}
               />
             ))
           )}
 
           {/* End node */}
-          <TimelineNode
-            icon="ellipse"
-            iconColor="#FF3B30"
-            label={destination.name}
-            sub="도착"
-            showLine={false}
-          />
+          <View style={styles.endpointRow}>
+            <View style={styles.endpointLeft}>
+              <View style={styles.arrivalDot} />
+            </View>
+            <View style={styles.endpointRight}>
+              <Text style={styles.endpointLabel}>{destination.name}</Text>
+              <Text style={styles.endpointSub}>목적지에 도착했습니다</Text>
+            </View>
+          </View>
         </View>
       </ScrollView>
 
@@ -184,6 +207,12 @@ export default function RouteConfirmScreen({ navigation, route }: Props) {
           disabled={!routeData || loading}
         />
       </View>
+
+      <ErrorToast
+        message={toastMessage}
+        visible={toastVisible}
+        onDismiss={handleDismissToast}
+      />
     </SafeAreaView>
   );
 }
@@ -200,6 +229,8 @@ interface TimelineNodeProps {
 }
 
 function TimelineNode({ number, icon, iconColor, label, sub, distance, showLine, faded }: TimelineNodeProps) {
+  const isDpStep = !icon && number !== undefined;
+
   return (
     <View style={styles.nodeContainer}>
       <View style={styles.nodeLeft}>
@@ -215,7 +246,7 @@ function TimelineNode({ number, icon, iconColor, label, sub, distance, showLine,
         {showLine && <View style={styles.connectorLine} />}
       </View>
 
-      <View style={styles.nodeRight}>
+      <View style={[styles.nodeRight, isDpStep && styles.nodeRightCard]}>
         <Text style={[styles.nodeLabel, faded && styles.fadedText]}>{label}</Text>
         {sub !== '' && <Text style={styles.nodeSub}>{sub}</Text>}
         {distance && <Text style={styles.nodeDistance}>{distance}</Text>}
@@ -274,12 +305,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#DDDDDD',
   },
-  errorText: {
-    fontSize: 13,
-    color: '#FF3B30',
-    marginTop: 8,
-  },
-
   // Map
   mapContainer: {
     height: 220,
@@ -296,33 +321,33 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
   },
   nodeLeft: {
-    width: 28,
+    width: 24,
     alignItems: 'center',
   },
   iconCircle: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
     justifyContent: 'center',
     alignItems: 'center',
   },
   numberCircle: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
     backgroundColor: COLORS.primary,
     justifyContent: 'center',
     alignItems: 'center',
   },
   numberText: {
-    fontSize: 13,
+    fontSize: 11,
     fontWeight: 'bold',
     color: '#FFFFFF',
   },
   connectorLine: {
-    width: 2,
+    width: 1.5,
     flex: 1,
-    backgroundColor: COLORS.primary,
+    backgroundColor: 'rgba(25, 25, 112, 0.2)',
     minHeight: 32,
   },
   nodeRight: {
@@ -330,20 +355,74 @@ const styles = StyleSheet.create({
     paddingLeft: 14,
     paddingBottom: 20,
   },
+  nodeRightCard: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E8E8E8',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    marginBottom: 12,
+  },
   nodeLabel: {
     fontSize: 15,
     fontWeight: '600',
-    color: COLORS.text,
+    color: '#333333',
   },
   nodeSub: {
     fontSize: 13,
-    color: COLORS.subtext,
-    marginTop: 2,
+    color: COLORS.primary,
+    marginTop: 3,
+    fontWeight: '500',
   },
   nodeDistance: {
     fontSize: 12,
     color: COLORS.primary,
     marginTop: 4,
+  },
+  endpointRow: {
+    flexDirection: 'row',
+  },
+  endpointLeft: {
+    width: 24,
+    alignItems: 'center',
+  },
+  departureDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: '#191970',
+    marginTop: 4,
+  },
+  arrivalDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 3,
+    borderColor: '#E85030',
+    marginTop: 4,
+  },
+  endpointLine: {
+    width: 2,
+    flex: 1,
+    backgroundColor: '#D0D0D0',
+    minHeight: 24,
+  },
+  endpointRight: {
+    flex: 1,
+    paddingLeft: 14,
+    paddingBottom: 16,
+  },
+  endpointLabel: {
+    fontSize: 15,
+    fontWeight: 'bold',
+    color: '#1A1A1A',
+  },
+  endpointSub: {
+    fontSize: 12,
+    color: '#999999',
+    marginTop: 2,
   },
   fadedText: {
     color: '#AAAAAA',
@@ -354,6 +433,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingBottom: 24,
     paddingTop: 12,
-    backgroundColor: COLORS.background,
+    backgroundColor: COLORS.card,
   },
 });
