@@ -12,6 +12,7 @@ import { NaverMapMarkerOverlay } from '@mj-studio/react-native-naver-map';
 import type { StackScreenProps } from '@react-navigation/stack';
 import { COLORS } from '../constants/colors';
 import { useRoute } from '../hooks/useRoute';
+import { requestLocationPermission } from '../hooks/useLocation';
 import { useRouteStore } from '../stores/useRouteStore';
 import MapView from '../components/map/MapView';
 import RoutePolyline from '../components/map/RoutePolyline';
@@ -79,7 +80,13 @@ export default function RouteConfirmScreen({ navigation, route }: Props) {
     zoom: 14,
   }), [departure, destination]);
 
-  const handleStart = () => {
+  const handleStart = async () => {
+    const hasPermission = await requestLocationPermission();
+    if (!hasPermission) {
+      setToastMessage('위치 권한이 필요합니다');
+      setToastVisible(true);
+      return;
+    }
     navigation.navigate('Navigation', {
       departure,
       destination,

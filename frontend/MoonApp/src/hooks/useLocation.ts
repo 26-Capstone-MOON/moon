@@ -26,7 +26,7 @@ const DEFAULT_OPTIONS: Required<UseLocationOptions> = {
   minAccuracy: 30,
 };
 
-async function requestLocationPermission(): Promise<boolean> {
+export async function requestLocationPermission(): Promise<boolean> {
   if (Platform.OS === 'android') {
     const granted = await PermissionsAndroid.request(
       PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
