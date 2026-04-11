@@ -15,7 +15,7 @@ import type { StackScreenProps } from '@react-navigation/stack';
 import { useIsFocused } from '@react-navigation/native';
 import BottomSheet, { BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import Reanimated, { useAnimatedStyle, interpolate, useSharedValue } from 'react-native-reanimated';
+import Reanimated, { useAnimatedStyle, useSharedValue, withTiming, interpolate, Extrapolation } from 'react-native-reanimated';
 import { COLORS } from '../constants/colors';
 import { speak as ttsSpeak, stop as ttsStop } from '../services/ttsService';
 import { vibrateApproach, vibrateArrival, vibrateTurn } from '../services/hapticService';
@@ -45,13 +45,12 @@ const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const SWIPE_THRESHOLD = SCREEN_WIDTH * 0.25;
 
 // Bottom sheet snap points
-const SNAP_MIN = 0.55;  // 55% - default (card + progress btn visible)
-const SNAP_MID = 0.70;  // 70%
-const SNAP_MAX = 0.85;  // 85%
+const SNAP_MIN = 0.55;  // 55% - default (panorama fully visible)
+const SNAP_MID = 0.75;  // 75%
+const SNAP_MAX = 0.90;  // 90%
 
-// Panorama height range (interpolated by animatedIndex)
-const PANO_HEIGHT_MIN = 72;
-const PANO_HEIGHT_MID = 140;
+// Panorama height range (driven by bottom sheet position)
+const PANO_HEIGHT_MIN = 200;
 const PANO_HEIGHT_MAX = 260;
 
 const NCP_CLIENT_ID = 'p1w5pdggbh';
@@ -145,6 +144,9 @@ export default function NavigationScreen({ navigation, route }: Props) {
   const [toastVisible, setToastVisible] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
   const [isRerouting, setIsRerouting] = useState(false);
+  const [panoReady, setPanoReady] = useState(false);
+  const [panoEnabled, _setPanoEnabled] = useState(true);
+  const [ttsEnabled, setTtsEnabled] = useState(true);
 
   const showError = useCallback((msg: string) => {
     setToastMessage(msg);
@@ -154,6 +156,8 @@ export default function NavigationScreen({ navigation, route }: Props) {
   // WebSocket connection
   const handleWsMessage = useCallback((data: unknown) => {
     const camelData = toCamelCase(data) as Parameters<typeof updateFromTracking>[0];
+    console.log('[WS] 수신:', JSON.stringify(camelData).substring(0, 300));
+    console.log('[WS] trigger:', camelData.trigger, '/ guidance:', JSON.stringify(camelData.guidance));
     updateFromTracking(camelData);
   }, [updateFromTracking]);
 
@@ -173,15 +177,21 @@ export default function NavigationScreen({ navigation, route }: Props) {
     Math.round(SCREEN_HEIGHT * SNAP_MAX),
   ], []);
 
-  const animatedIndex = useSharedValue(0);
+  const sheetIndex = useSharedValue(0);
 
-  const panoramaAnimStyle = useAnimatedStyle(() => ({
-    height: interpolate(
-      animatedIndex.value,
+  const handleSheetChange = useCallback((index: number) => {
+    sheetIndex.value = withTiming(index, { duration: 200 });
+  }, [sheetIndex]);
+
+  const panoramaAnimStyle = useAnimatedStyle(() => {
+    const height = interpolate(
+      sheetIndex.value,
       [0, 1, 2],
-      [PANO_HEIGHT_MIN, PANO_HEIGHT_MID, PANO_HEIGHT_MAX],
-    ),
-  }));
+      [PANO_HEIGHT_MIN, 160, PANO_HEIGHT_MAX],
+      Extrapolation.CLAMP,
+    );
+    return { height };
+  });
 
   // Reset translateX when returning from ProgressScreen
   useEffect(() => {
@@ -218,6 +228,17 @@ export default function NavigationScreen({ navigation, route }: Props) {
     }
   }, [localIndex, currentDP, isNavigating]);
 
+  // TTS: announce first DP on navigation start
+  const hasSpokenInitial = useRef(false);
+  useEffect(() => {
+    if (hasSpokenInitial.current || !ttsEnabled || !currentDP) { return; }
+    const text = currentDP.guidance?.primary;
+    if (text) {
+      ttsSpeak(text);
+      hasSpokenInitial.current = true;
+    }
+  }, [currentDP, ttsEnabled]);
+
   // TTS on trigger change (deduplicated)
   const guidance = useNavigationStore(s => s.guidance);
   const lastSpokenTrigger = useRef<string | null>(null);
@@ -249,22 +270,36 @@ export default function NavigationScreen({ navigation, route }: Props) {
         break;
     }
     if (text) {
-      ttsStop();
-      ttsSpeak(text);
       lastSpokenTrigger.current = trigger;
+      if (ttsEnabled) {
+        ttsStop();
+        ttsSpeak(text);
+      }
     }
-  }, [trigger, guidance]);
+  }, [trigger, guidance, ttsEnabled]);
 
-  // Auto-progress mock (pause when not focused)
+  // Sync localIndex from server's currentDpId
+  const serverDpId = useNavigationStore(s => s.currentDpId);
+  useEffect(() => {
+    if (!serverDpId || connectionState !== 'CONNECTED') { return; }
+    const idx = dpList.findIndex(dp => dp.dpId === serverDpId);
+    if (idx >= 0 && idx !== localIndex) {
+      console.log('[NAV] 서버 DP 동기화:', serverDpId, '/ index:', idx);
+      setLocalIndex(idx);
+    }
+  }, [serverDpId, dpList, connectionState, localIndex]);
+
+  // Auto-progress mock — only when WebSocket is NOT connected
   useEffect(() => {
     if (!isNavigating || isLastDP || !isFocused) { return; }
+    if (connectionState === 'CONNECTED') { return; }
     timerRef.current = setTimeout(() => {
       setLocalIndex(prev => Math.min(prev + 1, dpList.length - 1));
     }, 15000);
     return () => {
       if (timerRef.current) { clearTimeout(timerRef.current); }
     };
-  }, [localIndex, isNavigating, isLastDP, isFocused, dpList.length]);
+  }, [localIndex, isNavigating, isLastDP, isFocused, dpList.length, connectionState]);
 
   const handleReroute = useCallback(async () => {
     const routeId = routeData?.routeId;
@@ -292,7 +327,11 @@ export default function NavigationScreen({ navigation, route }: Props) {
 
   // Send GPS to server via WebSocket when position updates
   useEffect(() => {
-    if (!position || connectionState !== 'CONNECTED' || !routeData?.routeId) { return; }
+    if (!position || connectionState !== 'CONNECTED' || !routeData?.routeId) {
+      console.log('[WS] GPS 미전송 - position:', !!position, '/ ws:', connectionState, '/ routeId:', routeData?.routeId);
+      return;
+    }
+    console.log('[WS] GPS 전송:', position.latitude.toFixed(6), position.longitude.toFixed(6));
     send({
       route_id: routeData.routeId,
       latitude: position.latitude,
@@ -301,6 +340,13 @@ export default function NavigationScreen({ navigation, route }: Props) {
       speed: position.speed ?? 0,
     });
   }, [position, connectionState, routeData?.routeId, send]);
+
+  // Delay panorama WebView load to reduce memory pressure on mount
+  // Software GPU emulator needs more time for map to stabilize
+  useEffect(() => {
+    const t = setTimeout(() => setPanoReady(true), 1500);
+    return () => clearTimeout(t);
+  }, []);
 
   // Start WebSocket + GPS tracking on mount
   useEffect(() => {
@@ -394,23 +440,23 @@ export default function NavigationScreen({ navigation, route }: Props) {
     }
   }, [localIndex, dpList.length]);
 
+  const handleGoProgress = useCallback(() => {
+    navigation.navigate('Progress', { departure, destination, dpList });
+  }, [navigation, departure, destination, dpList]);
+
   if (!currentDP) {
     return (
       <SafeAreaView style={styles.safe}>
-        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+        <View style={styles.loadingContainer}>
           <Text style={{ color: COLORS.subtext }}>경로 정보를 불러오는 중...</Text>
         </View>
       </SafeAreaView>
     );
   }
 
-  // Map camera center on current DP
-  const cameraLat = currentDP.location.latitude;
-  const cameraLng = currentDP.location.longitude;
-
-  const handleGoProgress = useCallback(() => {
-    navigation.navigate('Progress', { departure, destination, dpList });
-  }, [navigation, departure, destination, dpList]);
+  // Map camera center on GPS position (fallback to current DP)
+  const cameraLat = position?.latitude ?? currentDP.location.latitude;
+  const cameraLng = position?.longitude ?? currentDP.location.longitude;
 
   return (
     <GestureHandlerRootView style={styles.root}>
@@ -449,7 +495,7 @@ export default function NavigationScreen({ navigation, route }: Props) {
                 longitude: cameraLng,
                 zoom: 16,
               }}
-              mapPadding={{ bottom: 60, top: 0, left: 0, right: 0 }}>
+              mapPadding={{ bottom: Math.round(SCREEN_HEIGHT * SNAP_MIN) + 16, top: 0, left: 0, right: 0 }}>
               <RoutePolyline
                 coordinates={lineCoords}
                 progress={localIndex / Math.max(dpList.length - 1, 1)}
@@ -458,8 +504,8 @@ export default function NavigationScreen({ navigation, route }: Props) {
                 <DpMarker key={dp.dpId} dp={dp} index={i} isActive={i === localIndex} />
               ))}
               <CurrentLocationMarker
-                latitude={currentDP.location.latitude}
-                longitude={currentDP.location.longitude}
+                latitude={position?.latitude ?? currentDP.location.latitude}
+                longitude={position?.longitude ?? currentDP.location.longitude}
               />
             </MapView>
 
@@ -486,7 +532,7 @@ export default function NavigationScreen({ navigation, route }: Props) {
             ref={bottomSheetRef}
             index={0}
             snapPoints={snapPoints}
-            animatedIndex={animatedIndex}
+            onChange={handleSheetChange}
             enablePanDownToClose={false}
             enableOverDrag={false}
             backgroundStyle={styles.sheetBackground}
@@ -495,8 +541,8 @@ export default function NavigationScreen({ navigation, route }: Props) {
             <BottomSheetScrollView style={styles.sheetContent} showsVerticalScrollIndicator={false}>
               {/* Panorama */}
               <View style={styles.panoramaSection}>
-                <Reanimated.View style={[styles.panoramaPlaceholder, panoramaAnimStyle]}>
-                  {currentDP && getPrimaryPan(currentDP) !== null ? (
+                {panoEnabled && panoReady && currentDP && getPrimaryPan(currentDP) !== null ? (
+                  <Reanimated.View style={[styles.panoramaPlaceholder, panoramaAnimStyle]}>
                     <WebView
                       key={`pano-${currentDP.dpId}`}
                       source={{
@@ -512,14 +558,17 @@ export default function NavigationScreen({ navigation, route }: Props) {
                       javaScriptEnabled={true}
                       domStorageEnabled={true}
                       originWhitelist={['*']}
+                      cacheEnabled={false}
+                      incognito={true}
+                      androidLayerType="software"
                     />
-                  ) : (
-                    <>
-                      <Icon name="image-outline" size={20} color="#B0B0B0" />
-                      <Text style={styles.panoramaText}>Street View</Text>
-                    </>
-                  )}
-                </Reanimated.View>
+                  </Reanimated.View>
+                ) : (
+                  <View style={styles.panoramaLoading}>
+                    <Icon name="image-outline" size={18} color="#B0B0B0" />
+                    <Text style={styles.panoramaLoadingText}>Street View 로딩 중...</Text>
+                  </View>
+                )}
               </View>
 
               {/* Guide Card */}
@@ -552,9 +601,23 @@ export default function NavigationScreen({ navigation, route }: Props) {
 
                 {/* Action buttons */}
                 <View style={styles.actionRow}>
-                  <TouchableOpacity style={styles.btnOutline} activeOpacity={0.7}>
-                    <Icon name="volume-high-outline" size={18} color={COLORS.primary} />
-                    <Text style={styles.btnOutlineText}>음성안내</Text>
+                  <TouchableOpacity
+                    style={[styles.btnOutline, !ttsEnabled && styles.btnOutlineDisabled]}
+                    activeOpacity={0.7}
+                    onPress={() => {
+                      setTtsEnabled(prev => {
+                        if (prev) { ttsStop(); }
+                        return !prev;
+                      });
+                    }}>
+                    <Icon
+                      name={ttsEnabled ? 'volume-high-outline' : 'volume-mute-outline'}
+                      size={18}
+                      color={ttsEnabled ? COLORS.primary : COLORS.subtext}
+                    />
+                    <Text style={[styles.btnOutlineText, !ttsEnabled && { color: COLORS.subtext }]}>
+                      {ttsEnabled ? '음성안내' : '음성끔'}
+                    </Text>
                   </TouchableOpacity>
                   <TouchableOpacity style={styles.btnFilled} activeOpacity={0.7}>
                     <Icon name="mic-outline" size={18} color="#FFFFFF" />
@@ -629,6 +692,11 @@ const styles = StyleSheet.create({
   safe: {
     flex: 1,
     backgroundColor: COLORS.background,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
 
   // Top Bar
@@ -779,6 +847,23 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     overflow: 'hidden',
   },
+  panoramaLoading: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    height: 200,
+    borderRadius: 14,
+    backgroundColor: '#F3F4F6',
+    borderWidth: 1,
+    borderColor: '#E8E8E8',
+    borderStyle: 'dashed',
+  },
+  panoramaLoadingText: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: '#B0B0B0',
+  },
   panoramaText: {
     fontSize: 13,
     color: '#B0B0B0',
@@ -854,6 +939,10 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: COLORS.primary,
     backgroundColor: COLORS.card,
+  },
+  btnOutlineDisabled: {
+    borderColor: COLORS.subtext,
+    backgroundColor: COLORS.background,
   },
   btnOutlineText: {
     fontSize: 14,

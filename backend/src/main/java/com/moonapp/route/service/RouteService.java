@@ -17,6 +17,7 @@ public class RouteService {
 
     private final PythonServiceClient pythonServiceClient;
     private final ObjectMapper objectMapper;
+    private final RouteDestinationCache destinationCache;
 
     public JsonNode createRoute(RouteCreateRequest request) {
         log.info("[DEBUG] createRoute 요청 - origin=({}, {}), dest=({}, {}), name={}",
@@ -45,6 +46,18 @@ public class RouteService {
 
         if (result.has("decision_points")) {
             log.info("[DEBUG] decision_points 개수: {}", result.get("decision_points").size());
+        }
+
+        // 목적지 정보를 캐시에 저장 (reroute 시 사용)
+        String routeId = result.has("route_id") ? result.get("route_id").asText() : null;
+        if (routeId != null) {
+            destinationCache.put(
+                routeId,
+                request.getDestinationLocation().getLatitude(),
+                request.getDestinationLocation().getLongitude(),
+                request.getDestinationName()
+            );
+            log.info("[DEBUG] 목적지 캐시 저장: routeId={}", routeId);
         }
 
         return result;

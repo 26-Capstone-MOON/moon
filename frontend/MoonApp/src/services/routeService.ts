@@ -80,7 +80,7 @@ export async function fetchRoute(
 
   if (!res.ok) {
     let errorBody = '';
-    try { errorBody = await res.text(); } catch (_) {}
+    try { errorBody = await res.text(); } catch {}
     console.error('[DEBUG] HTTP 에러:', res.status, errorBody.substring(0, 300));
     throw new Error(`서버 에러 (HTTP ${res.status})`);
   }
