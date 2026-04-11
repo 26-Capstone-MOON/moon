@@ -52,7 +52,7 @@
 ---
 
 ## Landmark
-- Selected by Python scoring model: `S_final = P(h) × (D(w) + U + C_bonus)`
+- Selected by Python scoring model: `S_final = (P × h × U) × (D × w) × C`
 - Frontend NEVER selects landmarks
 - Frontend receives `selectedLandmark` in each DP
 - If no landmark → `selectedLandmark: null` → fallback to basic instruction
@@ -63,35 +63,46 @@
 
 ### Formula
 ```
-S_final = P(h) × (D(w) + U + C_bonus)
+S_final =    (P × h × U)  ×   (D × w)  ×   C
+           ├─ Intrinsic ─┤   ├─ Env. ─┤  ├ Trust ┤
 ```
+All parameters are **multiplicative**. No additive components.
 
-### P(h) — Category Awareness × Business Hours Adjustment
+### P — Category Recognition (key values)
 
-Kakao `category_group_code` based. Key values:
+Kakao `category_group_code` based:
 
 | Code | Category | P value |
 |---|---|---|
-| SW8 | Subway station | 1.0 |
+| MT1 | Large mart | 1.0 |
+| PO3 | Public institution | 0.95 |
 | BK9 | Bank | 0.9 |
-| CS2 | Convenience store | 0.85 |
-| CE7 | Cafe | 0.75 |
-| FD6 | Restaurant | 0.7 |
+| SC4 | School | 0.85 |
+| SW8 | Subway station | 0.8 |
+| OL7 | Gas station | 0.75 |
+| CS2 | Convenience store | 0.7 |
+| CE7 | Cafe | 0.45 |
+| FD6 | Restaurant | 0.4 |
 
-Full 18-category table: see `docs/scoring-categories.md` or API spec appendix A.3.
+Full 18-category table + sub-classification overrides: see `services/dp-pipeline/.claude/rules/scoring.md`.
 
-**isOpen adjustment** (Google Places API):
+### h — Business Hours Correction (Google Places API `isOpen()`)
 - Open: ×1.0 / Closed: ×0.5 / Unknown: ×0.7
 
-### D(w) — Distance Fitness × Weather Modifier
+### U — Uniqueness
+Same `category_group_code` count within 100m:
+- 1 (unique): 1.0 / 2: 0.7 / 3: 0.4 / 4+: 0.2
 
+### D — Distance Fitness
 ```
-D = (1 - d/MD) × w_mod
+D = 1 - d / MD
 ```
 - `d`: straight-line distance from DP to landmark (m)
-- `MD`: max search radius (default 100m)
+- `MD`: adaptive search radius from STEP 2 POI collection (30m / 50m / 75m / 100m)
 
-| Weather | w_mod | Enum |
+### w — Weather Correction
+
+| Weather | w | Enum |
 |---|---|---|
 | Clear | 1.0 | `CLEAR` |
 | Cloudy | 0.85 | `CLOUDY` |
@@ -99,29 +110,24 @@ D = (1 - d/MD) × w_mod
 | Snow | 0.5 | `SNOW` |
 | Fog | 0.4 | `FOG` |
 
-### U — Uniqueness
+### C — Cross-Validation Confidence (multiplicative)
 
-Same `category_group_code` count within 100m:
-- 1 (unique): 1.0 / 2: 0.7 / 3: 0.4 / 4+: 0.2
-
-### C_bonus — Cross-Validation Bonus
-
-| MatchStatus | C_bonus | Meaning |
+| MatchStatus | C | Meaning |
 |---|---|---|
-| `MATCHED` | +0.5 | POI + Vision both confirm |
-| `POI_ONLY` | +0.2 | Only in POI data |
-| `VISION_ONLY` | +0.0 | Only in image → no bonus |
+| `MATCHED` | 1.5 | POI + Vision both confirm → high confidence |
+| `POI_ONLY` | 1.2 | Only in POI data → possible new opening |
+| `VISION_ONLY` | 1.0 | Only in image → no adjustment |
 
-- Additive: VISION_ONLY still keeps P × (D + U) score. Not filtered out.
+- VISION_ONLY (1.0) retains full Intrinsic × Env score. Not filtered out.
 - Matching algorithm: exact → partial → category match (in order)
 
-### Scoring Example (clear day, 3pm)
+### Scoring Example (clear day, 3pm, search radius 100m)
 
-| Landmark | P(h) | D(w) | U | C_bonus | S_final |
-|---|---|---|---|---|---|
-| Kookmin Bank (30m, unique, MATCHED, open) | 0.9 | 0.7 | 1.0 | 0.5 | **1.98** |
-| GS25 (20m, 1 of 3, POI_ONLY, open) | 0.85 | 0.8 | 0.4 | 0.2 | 1.19 |
-| Private restaurant (50m, unique, VISION_ONLY, closed) | 0.35 | 0.5 | 1.0 | 0.0 | 0.525 |
+| Landmark | Intrinsic (P×h×U) | Env (D×w) | C | S_final |
+|---|---|---|---|---|
+| Kookmin Bank (30m, unique, MATCHED, open) | 0.9×1.0×1.0=0.9 | 0.7×1.0=0.7 | 1.5 | **0.945** |
+| GS25 (20m, 1 of 3, POI_ONLY, open) | 0.7×1.0×0.4=0.28 | 0.8×1.0=0.8 | 1.2 | **0.269** |
+| Private restaurant (50m, unique, VISION_ONLY, closed) | 0.25×0.5×1.0=0.125 | 0.5×1.0=0.5 | 1.0 | **0.063** |
 
 ---
 

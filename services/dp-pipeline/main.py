@@ -553,7 +553,7 @@ async def _build_live_pipeline_summary(
             })
             continue
 
-        pois = await search_pois_for_dp(
+        pois, _sr = await search_pois_for_dp(
             dp.location.latitude,
             dp.location.longitude,
             bearing,
@@ -774,6 +774,7 @@ async def _build_route_response(request: RouteRequest) -> RouteResponse:
             continue  # already has landmark/guidance/panorama from midpoint_service
 
         bearing = _get_dp_bearing(dp, tmap_result.coordinates)
+        search_radius = 50.0  # default; overwritten by search_pois_for_dp
 
         if dp.dp_type == "CROSSWALK":
             crosswalk_result = await search_pois_for_crosswalk(
@@ -789,12 +790,18 @@ async def _build_route_response(request: RouteRequest) -> RouteResponse:
                 else {}
             )
             before_best = (
-                select_landmark(crosswalk_result.before, weather, is_open_map)
+                select_landmark(
+                    crosswalk_result.before, weather, is_open_map,
+                    search_radius=crosswalk_result.before_search_radius,
+                )
                 if crosswalk_result.before
                 else None
             )
             after_best = (
-                select_landmark(crosswalk_result.after, weather, is_open_map)
+                select_landmark(
+                    crosswalk_result.after, weather, is_open_map,
+                    search_radius=crosswalk_result.after_search_radius,
+                )
                 if crosswalk_result.after
                 else None
             )
@@ -809,7 +816,7 @@ async def _build_route_response(request: RouteRequest) -> RouteResponse:
         elif dp.dp_type in ("DEPARTURE", "ARRIVAL"):
             pois = []
         else:
-            pois = await search_pois_for_dp(
+            pois, search_radius = await search_pois_for_dp(
                 dp.location.latitude,
                 dp.location.longitude,
                 bearing,
@@ -817,7 +824,7 @@ async def _build_route_response(request: RouteRequest) -> RouteResponse:
 
         if pois:
             is_open_map = await fetch_is_open_statuses(pois)
-            best = select_landmark(pois, weather, is_open_map)
+            best = select_landmark(pois, weather, is_open_map, search_radius=search_radius)
             if best is not None:
                 dp.selected_landmark = _build_selected_landmark(
                     best, is_open_map,

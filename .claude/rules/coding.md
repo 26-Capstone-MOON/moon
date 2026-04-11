@@ -173,7 +173,7 @@ services/
 │   ├── dp_extractor.py            # turnType-based DP extraction
 │   ├── poi_service.py             # Kakao Local API + adaptive radius + left/right judgment
 │   ├── panorama_service.py        # Multi-direction pan calculation + isPrimary
-│   ├── scoring_service.py         # S_final = P(h) × (D(w) + U + C_bonus)
+│   ├── scoring_service.py         # S_final = (P × h × U) × (D × w) × C
 │   ├── cross_validator.py         # POI vs Vision matching (exact → partial → category)
 │   ├── sequence_optimizer.py      # Greedy + direction consistency
 │   ├── guidance_generator.py      # DP type templates + LLM prompt

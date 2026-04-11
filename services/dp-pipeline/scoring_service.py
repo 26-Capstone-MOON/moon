@@ -1,7 +1,8 @@
-"""STEP 5: Landmark scoring — S_final = P(h) x (D(w) + U + C_bonus).
+"""STEP 5: Landmark scoring — S_final = (P × h × U) × (D × w) × C.
 
 Scores POI candidates for each DP and selects the best landmark.
-C_bonus defaults to POI_ONLY (+0.2) until Vision cross-validation is available.
+All parameters are multiplicative. C defaults to POI_ONLY (1.2) until
+Vision cross-validation is available.
 """
 
 from __future__ import annotations
@@ -10,10 +11,10 @@ from dataclasses import dataclass
 
 from constants import (
     CATEGORY_P_VALUES,
-    CROSS_VALIDATION_BONUS,
+    CROSS_VALIDATION_COEFFICIENT,
     DEFAULT_P_VALUE,
+    DEFAULT_POI_RADIUS,
     IS_OPEN_COEFFICIENT,
-    MAX_SEARCH_RADIUS,
     UNIQUENESS_DEFAULT,
     UNIQUENESS_SCORES,
     WEATHER_W_MOD,
@@ -100,11 +101,11 @@ class ScoredPoi:
     """POI with full scoring breakdown."""
 
     poi: PoiResult
-    p_h: float       # P(h) = base_or_sub_P * h_multiplier
-    d_w: float       # D(w) = (1 - d/MD) * w_mod
+    p_h: float       # P × h (category recognition × business hours)
+    d_w: float       # D × w (distance fitness × weather)
     u: float         # Uniqueness
-    c_bonus: float   # Cross-validation bonus
-    s_final: float   # P(h) * (D(w) + U + C_bonus)
+    c: float         # Cross-validation coefficient (multiplicative)
+    s_final: float   # (P × h × U) × (D × w) × C
 
 
 # ---------------------------------------------------------------------------
@@ -181,17 +182,23 @@ def compute_p_h(
 # D(w) — Distance fitness x weather correction
 # ---------------------------------------------------------------------------
 
-def compute_d_w(distance: float, weather: str = "CLEAR") -> float:
-    """Compute D(w) = (1 - d/MD) * w_mod.
+def compute_d_w(
+    distance: float,
+    weather: str = "CLEAR",
+    search_radius: float = DEFAULT_POI_RADIUS,
+) -> float:
+    """Compute D × w = (1 - d/MD) × w_mod.
 
     Args:
-        distance: Straight-line distance from DP to POI (meters)
-        weather: WeatherCondition enum value
+        distance: Straight-line distance from DP to POI (meters).
+        weather: WeatherCondition enum value.
+        search_radius: Adaptive search radius (MD) used during POI collection.
 
     Returns:
-        D(w) value, clamped to >= 0.
+        D × w value, clamped to >= 0.
     """
-    d_ratio = max(0.0, 1.0 - distance / MAX_SEARCH_RADIUS)
+    md = max(search_radius, 1.0)  # avoid division by zero
+    d_ratio = max(0.0, 1.0 - distance / md)
     w_mod = WEATHER_W_MOD.get(weather, 1.0)
     return d_ratio * w_mod
 
@@ -236,31 +243,33 @@ def score_poi(
     weather: str = "CLEAR",
     is_open_status: str = "UNKNOWN",
     match_status: str = "POI_ONLY",
+    search_radius: float = DEFAULT_POI_RADIUS,
 ) -> ScoredPoi:
-    """Compute S_final for a single POI.
+    """Compute S_final = (P × h × U) × (D × w) × C for a single POI.
 
     Args:
-        poi: Target POI
-        all_pois: All POIs near this DP (for uniqueness calculation)
-        weather: WeatherCondition enum value
-        is_open_status: "OPEN", "CLOSED", or "UNKNOWN"
-        match_status: "MATCHED", "POI_ONLY", or "VISION_ONLY"
+        poi: Target POI.
+        all_pois: All POIs near this DP (for uniqueness calculation).
+        weather: WeatherCondition enum value.
+        is_open_status: "OPEN", "CLOSED", or "UNKNOWN".
+        match_status: "MATCHED", "POI_ONLY", or "VISION_ONLY".
+        search_radius: Adaptive search radius (MD) used during POI collection.
 
     Returns:
         ScoredPoi with full breakdown.
     """
     p_h = compute_p_h(poi, is_open_status)
-    d_w = compute_d_w(poi.distance, weather)
+    d_w = compute_d_w(poi.distance, weather, search_radius)
     u = compute_uniqueness(poi, all_pois)
-    c_bonus = CROSS_VALIDATION_BONUS.get(match_status, 0.0)
-    s_final = p_h * (d_w + u + c_bonus)
+    c = CROSS_VALIDATION_COEFFICIENT.get(match_status, 1.0)
+    s_final = (p_h * u) * d_w * c
 
     return ScoredPoi(
         poi=poi,
         p_h=p_h,
         d_w=d_w,
         u=u,
-        c_bonus=c_bonus,
+        c=c,
         s_final=s_final,
     )
 
@@ -270,14 +279,16 @@ def rank_pois(
     weather: str = "CLEAR",
     is_open_statuses: dict[str, str] | None = None,
     match_statuses: dict[str, str] | None = None,
+    search_radius: float = DEFAULT_POI_RADIUS,
 ) -> list[ScoredPoi]:
     """Score and rank all POIs for a single DP.
 
     Args:
-        pois: POI list from poi_service
-        weather: WeatherCondition enum value
-        is_open_statuses: {place_name -> "OPEN"|"CLOSED"|"UNKNOWN"}, optional
-        match_statuses: {place_name -> "MATCHED"|"POI_ONLY"|"VISION_ONLY"}, optional
+        pois: POI list from poi_service.
+        weather: WeatherCondition enum value.
+        is_open_statuses: {place_name -> "OPEN"|"CLOSED"|"UNKNOWN"}, optional.
+        match_statuses: {place_name -> "MATCHED"|"POI_ONLY"|"VISION_ONLY"}, optional.
+        search_radius: Adaptive search radius (MD) used during POI collection.
 
     Returns:
         List of ScoredPoi sorted by s_final descending.
@@ -298,6 +309,7 @@ def rank_pois(
                 open_map.get(poi.place_name, "UNKNOWN"),
             ),
             match_status=match_map.get(poi.place_name, "POI_ONLY"),
+            search_radius=search_radius,
         )
         for poi in pois
     ]
@@ -311,17 +323,19 @@ def select_landmark(
     weather: str = "CLEAR",
     is_open_statuses: dict[str, str] | None = None,
     match_statuses: dict[str, str] | None = None,
+    search_radius: float = DEFAULT_POI_RADIUS,
 ) -> ScoredPoi | None:
     """Select the best landmark for a DP.
 
     Args:
-        pois: POI list from poi_service
-        weather: WeatherCondition enum value
-        is_open_statuses: {place_name -> "OPEN"|"CLOSED"|"UNKNOWN"}, optional
-        match_statuses: {place_name -> "MATCHED"|"POI_ONLY"|"VISION_ONLY"}, optional
+        pois: POI list from poi_service.
+        weather: WeatherCondition enum value.
+        is_open_statuses: {place_name -> "OPEN"|"CLOSED"|"UNKNOWN"}, optional.
+        match_statuses: {place_name -> "MATCHED"|"POI_ONLY"|"VISION_ONLY"}, optional.
+        search_radius: Adaptive search radius (MD) used during POI collection.
 
     Returns:
         Best ScoredPoi, or None if no POIs.
     """
-    ranked = rank_pois(pois, weather, is_open_statuses, match_statuses)
+    ranked = rank_pois(pois, weather, is_open_statuses, match_statuses, search_radius)
     return ranked[0] if ranked else None

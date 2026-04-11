@@ -156,7 +156,7 @@ class CrossValidationResult(BaseModel):
     poi_name: str
     vision_name: Optional[str] = None
     match_status: str  # MATCHED | POI_ONLY | VISION_ONLY
-    c_bonus: float  # 0.5 | 0.2 | 0.0
+    c_coefficient: float  # 1.5 | 1.2 | 1.0
     category_group_code: str
 
 

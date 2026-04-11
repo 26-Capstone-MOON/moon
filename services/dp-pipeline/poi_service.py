@@ -13,7 +13,7 @@ from constants import (
     CATEGORY_P_VALUES,
     DEFAULT_P_VALUE,
     DEFAULT_POI_RADIUS,
-    MAX_SEARCH_RADIUS,
+    POI_MAX_DISTANCE,
     POI_RADIUS_EXPAND_1,
     POI_RADIUS_EXPAND_2,
     POI_RADIUS_SHRINK,
@@ -47,6 +47,8 @@ class CrosswalkPoiResult:
 
     before: list[PoiResult] = field(default_factory=list)
     after: list[PoiResult] = field(default_factory=list)
+    before_search_radius: float = DEFAULT_POI_RADIUS
+    after_search_radius: float = DEFAULT_POI_RADIUS
 
 
 def determine_position(
@@ -172,7 +174,7 @@ def _build_same_category_counts(
         place_name = doc.get("place_name", "")
         poi_lat = float(doc.get("y", 0))
         poi_lon = float(doc.get("x", 0))
-        if haversine(center_lat, center_lon, poi_lat, poi_lon) > MAX_SEARCH_RADIUS:
+        if haversine(center_lat, center_lon, poi_lat, poi_lon) > POI_MAX_DISTANCE:
             continue
 
         deduped[_poi_dedup_key(place_name, poi_lat, poi_lon)] = doc.get(
@@ -212,7 +214,7 @@ def _build_poi_results(
 
         cat_code = doc.get("category_group_code", "")
         distance = haversine(center_lat, center_lon, poi_lat, poi_lon)
-        if distance > MAX_SEARCH_RADIUS:
+        if distance > POI_MAX_DISTANCE:
             continue
 
         position = determine_position(
@@ -244,23 +246,23 @@ async def search_pois_for_dp(
     lat: float,
     lon: float,
     travel_bearing: float,
-) -> list[PoiResult]:
+) -> tuple[list[PoiResult], float]:
     """Search POIs near a DP with adaptive radius.
 
     Searches all 18 Kakao category codes in parallel. Applies adaptive
     radius logic: expands if 0 results, shrinks if 10+ results.
 
     Args:
-        lat: DP latitude
-        lon: DP longitude
-        travel_bearing: Travel direction at DP in degrees (0~360)
+        lat: DP latitude.
+        lon: DP longitude.
+        travel_bearing: Travel direction at DP in degrees (0~360).
 
     Returns:
-        List of PoiResult sorted by distance ascending.
-        Empty list if API key missing or all searches fail.
+        Tuple of (PoiResult list sorted by distance ascending, search_radius).
+        search_radius is the adaptive radius actually used (MD for scoring D).
     """
     if not settings.kakao_api_key:
-        return []
+        return [], DEFAULT_POI_RADIUS
 
     async with httpx.AsyncClient(timeout=KAKAO_TIMEOUT) as client:
         # First pass with default radius
@@ -287,21 +289,22 @@ async def search_pois_for_dp(
             candidate_radius = int(POI_RADIUS_SHRINK)
 
         uniqueness_docs = all_docs
-        if candidate_radius != int(MAX_SEARCH_RADIUS):
+        if candidate_radius != int(POI_MAX_DISTANCE):
             uniqueness_docs = await _search_all_categories(
-                client, lat, lon, int(MAX_SEARCH_RADIUS),
+                client, lat, lon, int(POI_MAX_DISTANCE),
             )
 
     same_category_counts_100m = _build_same_category_counts(
         uniqueness_docs, lat, lon,
     )
-    return _build_poi_results(
+    pois = _build_poi_results(
         all_docs,
         lat,
         lon,
         travel_bearing,
         same_category_counts_100m,
     )
+    return pois, float(candidate_radius)
 
 
 def _offset_point(lat: float, lon: float, bearing_deg: float, distance_m: float) -> tuple[float, float]:
@@ -335,9 +338,14 @@ async def search_pois_for_crosswalk(
     """
     after_lat, after_lon = _offset_point(lat, lon, travel_bearing, CROSSWALK_AFTER_OFFSET_M)
 
-    before_pois, after_pois = await asyncio.gather(
+    (before_pois, before_radius), (after_pois, after_radius) = await asyncio.gather(
         search_pois_for_dp(lat, lon, travel_bearing),
         search_pois_for_dp(after_lat, after_lon, travel_bearing),
     )
 
-    return CrosswalkPoiResult(before=before_pois, after=after_pois)
+    return CrosswalkPoiResult(
+        before=before_pois,
+        after=after_pois,
+        before_search_radius=before_radius,
+        after_search_radius=after_radius,
+    )

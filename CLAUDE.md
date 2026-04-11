@@ -16,7 +16,7 @@ Guidance channels: map (base layer) + spatial description + voice TTS + haptic v
 Navigation is based on **Decision Points (DP)**.
 
 At each DP, the backend:
-1. Selects the best landmark via scoring model: `S_final = P(h) × (D(w) + U + C_bonus)`
+1. Selects the best landmark via scoring model: `S_final = (P × h × U) × (D × w) × C`
 2. Generates spatial description guidance per DP type
 3. Sends complete guidance package to frontend
 

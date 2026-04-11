@@ -172,20 +172,20 @@ UNIQUENESS_SCORES: dict[int, float] = {
 UNIQUENESS_DEFAULT: float = 0.2  # 4+
 
 # ---------------------------------------------------------------------------
-# C_bonus — Cross-validation bonus
+# C — Cross-validation confidence coefficient (multiplicative)
 # ---------------------------------------------------------------------------
 
-CROSS_VALIDATION_BONUS: dict[str, float] = {
-    "MATCHED": 0.5,
-    "POI_ONLY": 0.2,
-    "VISION_ONLY": 0.0,
+CROSS_VALIDATION_COEFFICIENT: dict[str, float] = {
+    "MATCHED": 1.5,
+    "POI_ONLY": 1.2,
+    "VISION_ONLY": 1.0,
 }
 
 # ---------------------------------------------------------------------------
 # Distance / threshold constants
 # ---------------------------------------------------------------------------
 
-MAX_SEARCH_RADIUS: float = 100.0          # MD for D(w) formula (meters)
+POI_MAX_DISTANCE: float = 100.0            # max POI filter distance / uniqueness radius (meters)
 DEFAULT_POI_RADIUS: float = 50.0          # initial POI search radius (meters)
 POI_RADIUS_EXPAND_1: float = 75.0         # first expansion
 POI_RADIUS_EXPAND_2: float = 100.0        # second expansion

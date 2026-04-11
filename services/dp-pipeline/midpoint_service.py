@@ -51,6 +51,7 @@ class _ScoredCandidate:
     best_poi: PoiResult | None
     all_pois: list[PoiResult] = field(default_factory=list)
     bearing: float = 0.0
+    search_radius: float = 50.0
 
 
 # ---------------------------------------------------------------------------
@@ -194,24 +195,26 @@ def _score_midpoint_poi(
     all_pois: list[PoiResult],
     weather: str,
     is_open_status: str = "UNKNOWN",
+    search_radius: float = 50.0,
 ) -> float:
     """Score POI for midpoint candidate ranking.
 
-    Uses P(h) × (D(w) + U). C_bonus is excluded at midpoint stage.
+    Uses (P × h × U) × (D × w). C is excluded at midpoint stage (no Vision).
 
     Args:
         poi: Target POI.
         all_pois: All POIs near this candidate (for uniqueness).
         weather: WeatherCondition enum value.
         is_open_status: "OPEN", "CLOSED", or "UNKNOWN".
+        search_radius: Adaptive search radius (MD) used during POI collection.
 
     Returns:
         Midpoint score (higher is better).
     """
     p_h = compute_p_h(poi, is_open_status)
-    d_w = compute_d_w(poi.distance, weather)
+    d_w = compute_d_w(poi.distance, weather, search_radius)
     u = compute_uniqueness(poi, all_pois)
-    return p_h * (d_w + u)
+    return (p_h * u) * d_w
 
 
 # ---------------------------------------------------------------------------
@@ -416,18 +419,7 @@ async def insert_midpoints(
         ) -> _ScoredCandidate:
             async with semaphore:
                 bearing = _bearing_at_point(lat, lon, route_coordinates)
-                pois = await search_pois_for_dp(lat, lon, bearing)
-
-            if pois:
-                scores = [
-                    _score_midpoint_poi(p, pois, weather) for p in pois
-                ]
-                best_idx = max(range(len(pois)), key=lambda i: scores[i])
-                best_poi = pois[best_idx]
-                score = scores[best_idx]
-            else:
-                best_poi = None
-                score = 0.0
+                pois, sr = await search_pois_for_dp(lat, lon, bearing)
 
             return _ScoredCandidate(
                 dist_from_start=dist,
@@ -437,6 +429,7 @@ async def insert_midpoints(
                 best_poi=None,
                 all_pois=pois,
                 bearing=bearing,
+                search_radius=sr,
             )
 
         scored = await asyncio.gather(*[
@@ -467,6 +460,7 @@ async def insert_midpoints(
                     cand.all_pois,
                     weather,
                     is_open_status,
+                    search_radius=cand.search_radius,
                 )
                 if score > best_score:
                     best_score = score
@@ -524,6 +518,7 @@ async def insert_midpoints(
                 )
                 final_score = _score_midpoint_poi(
                     cand.best_poi, cand.all_pois, weather, is_open_status,
+                    search_radius=cand.search_radius,
                 )
                 landmark = _poi_to_landmark(
                     cand.best_poi, final_score, is_open_status,

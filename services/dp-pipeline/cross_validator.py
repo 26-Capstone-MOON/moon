@@ -1,4 +1,4 @@
-"""Cross-validation: POI data vs Vision results → match_status + C_bonus.
+"""Cross-validation: POI data vs Vision results → match_status + C coefficient.
 
 Compares POI business names against panorama Vision-recognized names to
 determine existence confidence. Applies only to landmarks (not facilities).
@@ -8,7 +8,7 @@ Matching priority: exact → partial → (category match is NOT sufficient for M
 
 from __future__ import annotations
 
-from constants import CROSS_VALIDATION_BONUS
+from constants import CROSS_VALIDATION_COEFFICIENT
 from poi_service import PoiResult
 from schemas import CrossValidationResult
 
@@ -44,14 +44,14 @@ def match_poi_against_vision(
         vision_names: Business names recognized by Vision at this DP
 
     Returns:
-        CrossValidationResult with match_status and c_bonus.
+        CrossValidationResult with match_status and c_coefficient.
     """
     if not vision_names:
         return CrossValidationResult(
             poi_name=poi.place_name,
             vision_name=None,
             match_status="POI_ONLY",
-            c_bonus=CROSS_VALIDATION_BONUS["POI_ONLY"],
+            c_coefficient=CROSS_VALIDATION_COEFFICIENT["POI_ONLY"],
             category_group_code=poi.category_group_code,
         )
 
@@ -62,7 +62,7 @@ def match_poi_against_vision(
                 poi_name=poi.place_name,
                 vision_name=vn,
                 match_status="MATCHED",
-                c_bonus=CROSS_VALIDATION_BONUS["MATCHED"],
+                c_coefficient=CROSS_VALIDATION_COEFFICIENT["MATCHED"],
                 category_group_code=poi.category_group_code,
             )
 
@@ -73,7 +73,7 @@ def match_poi_against_vision(
                 poi_name=poi.place_name,
                 vision_name=vn,
                 match_status="MATCHED",
-                c_bonus=CROSS_VALIDATION_BONUS["MATCHED"],
+                c_coefficient=CROSS_VALIDATION_COEFFICIENT["MATCHED"],
                 category_group_code=poi.category_group_code,
             )
 
@@ -82,7 +82,7 @@ def match_poi_against_vision(
         poi_name=poi.place_name,
         vision_name=None,
         match_status="POI_ONLY",
-        c_bonus=CROSS_VALIDATION_BONUS["POI_ONLY"],
+        c_coefficient=CROSS_VALIDATION_COEFFICIENT["POI_ONLY"],
         category_group_code=poi.category_group_code,
     )
 
@@ -95,7 +95,7 @@ def cross_validate_dp(
     """Run cross-validation for all POIs at a single DP.
 
     Facility DPs (crosswalk, vertical move) are skipped — all POIs get
-    match_status "POI_ONLY" with c_bonus 0.0 (not applicable).
+    match_status "POI_ONLY" with c_coefficient 1.0 (not applicable).
 
     Vision names not matched to any POI are recorded as VISION_ONLY entries.
 
@@ -114,7 +114,7 @@ def cross_validate_dp(
                 poi_name=poi.place_name,
                 vision_name=None,
                 match_status="POI_ONLY",
-                c_bonus=0.0,
+                c_coefficient=1.0,
                 category_group_code=poi.category_group_code,
             )
             for poi in pois
@@ -137,7 +137,7 @@ def cross_validate_dp(
                 poi_name="",
                 vision_name=vn,
                 match_status="VISION_ONLY",
-                c_bonus=CROSS_VALIDATION_BONUS["VISION_ONLY"],
+                c_coefficient=CROSS_VALIDATION_COEFFICIENT["VISION_ONLY"],
                 category_group_code="",
             ))
 
