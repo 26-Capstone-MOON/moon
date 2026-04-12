@@ -66,11 +66,6 @@ _route_cache: dict[str, RouteResponse] = {}
 # ---------------------------------------------------------------------------
 _detector_cache: dict[str, DeviationDetector] = {}
 
-# ---------------------------------------------------------------------------
-# Per-route completed DP tracking (dp_id set)
-# ---------------------------------------------------------------------------
-_completed_dps: dict[str, set[str]] = {}
-
 DEVIATION_DISTANCE_THRESHOLD = 20.0
 
 TURN_LEFT = 12
@@ -883,27 +878,12 @@ def route_get(route_id: str) -> ApiResponse:
 # ---------------------------------------------------------------------------
 
 class DeviationCheckRequest(BaseModel):
-    """Lightweight deviation check request matching Spring Boot WebSocket relay."""
+    """Lightweight deviation check request matching Notion test JSON format."""
     route_id: str
     latitude: float
     longitude: float
-    timestamp: str | float = ""  # ISO string from frontend or epoch float
-    speed: float = 0.0
-
-
-def _parse_timestamp(raw: str | float) -> float:
-    """Convert ISO string or epoch float to epoch seconds."""
-    if isinstance(raw, (int, float)) and raw > 0:
-        return float(raw)
-    if isinstance(raw, str) and raw:
-        from datetime import datetime, timezone
-        try:
-            dt = datetime.fromisoformat(raw.replace("Z", "+00:00"))
-            return dt.timestamp()
-        except ValueError:
-            pass
-    import time
-    return time.time()
+    timestamp: float
+    speed: Optional[float] = None
 
 
 def _get_or_create_detector(route_id: str) -> DeviationDetector:
@@ -923,31 +903,9 @@ def _get_or_create_detector(route_id: str) -> DeviationDetector:
     return detector
 
 
-def _find_nearest_dp(
-    lat: float, lng: float, route: RouteResponse, route_id: str
-) -> tuple[DecisionPoint, float, int]:
-    """Find the current (next uncompleted) DP in route order.
-
-    Skips DPs already in _completed_dps for this route.
-    Returns (dp, distance_m, index).
-    """
-    completed = _completed_dps.get(route_id, set())
-    for i, dp in enumerate(route.decision_points):
-        if dp.dp_id in completed:
-            continue
-        d = haversine(lat, lng, dp.location.latitude, dp.location.longitude)
-        return dp, d, i
-    # All DPs completed — fall back to last DP
-    last = route.decision_points[-1]
-    d = haversine(lat, lng, last.location.latitude, last.location.longitude)
-    return last, d, len(route.decision_points) - 1
-
-
 def _deviation_result_to_response(
     result: DeviationResult,
     route_id: str,
-    lat: float,
-    lng: float,
 ) -> DeviationResponse:
     """Convert internal DeviationResult to API DeviationResponse."""
     state_mapping = {
@@ -960,10 +918,8 @@ def _deviation_result_to_response(
     }
     navigation_state = state_mapping.get(result.state, "ON_ROUTE")
 
-    trigger: str | None = None
-    guidance: Guidance | None = None
-
-    # Deviation-related triggers
+    trigger = None
+    guidance = None
     if result.message:
         if "벗어난" in result.message:
             trigger = "DEVIATION_WARNING"
@@ -973,90 +929,28 @@ def _deviation_result_to_response(
             trigger = "RETURN_DETECTED"
         guidance = Guidance(primary=result.message)
 
-    # On normal route: find nearest DP and generate PRE_ALERT / ARRIVAL trigger
-    route = _route_cache.get(route_id)
-    nearest_dp = route.decision_points[0] if route else None
-    distance_to_dp = result.distance_to_route_m
-    current_dp_id = ""
-    progress: Progress | None = None
-
-    if route and navigation_state == "ON_ROUTE":
-        # Ensure completed set exists for this route
-        if route_id not in _completed_dps:
-            _completed_dps[route_id] = set()
-
-        dp, dist, idx = _find_nearest_dp(lat, lng, route, route_id)
-        nearest_dp = dp
-        distance_to_dp = dist
-        current_dp_id = dp.dp_id
-
-        # Check destination arrival first
-        dest = route.decision_points[-1]
-        dest_dist = haversine(lat, lng, dest.location.latitude, dest.location.longitude)
-        if dest_dist <= ARRIVAL_DISTANCE:
-            navigation_state = "ARRIVED"
-            trigger = "ARRIVAL"
-            guidance = dest.guidance
-            current_dp_id = dest.dp_id
-            _completed_dps[route_id].add(dest.dp_id)
-        else:
-            dp_trigger = _classify_trigger(dist)
-            if dp_trigger is not None:
-                trigger = dp_trigger
-                if dp_trigger == "PRE_ALERT":
-                    guidance = Guidance(
-                        primary=dp.guidance.primary,
-                        pre_alert=dp.guidance.pre_alert,
-                        action=dp.guidance.action,
-                    )
-                elif dp_trigger == "ARRIVAL":
-                    guidance = dp.guidance
-                    # Mark this DP as completed so next call targets the next DP
-                    _completed_dps[route_id].add(dp.dp_id)
-
-        # Build progress from tracked completed set
-        completed = [d.dp_id for d in route.decision_points if d.dp_id in _completed_dps[route_id]]
-        remaining = [d.dp_id for d in route.decision_points if d.dp_id not in _completed_dps[route_id]]
-        dest_loc = route.decision_points[-1].location
-        dist_remaining = haversine(lat, lng, dest_loc.latitude, dest_loc.longitude)
-        progress = Progress(
-            completed_dps=completed,
-            current_dp_id=current_dp_id,
-            remaining_dps=remaining,
-            distance_remaining=dist_remaining,
-            time_remaining=dist_remaining / WALKING_SPEED_MPS,
-        )
-    elif route:
-        current_dp_id = nearest_dp.dp_id if nearest_dp else ""
-
     return DeviationResponse(
         navigation_state=navigation_state,
-        current_dp_id=current_dp_id,
-        distance_to_dp=distance_to_dp,
+        current_dp_id="",
+        distance_to_dp=result.distance_to_route_m,
         trigger=trigger,
         guidance=guidance,
-        progress=progress,
     )
 
 
 @app.post("/api/deviation", response_model=ApiResponse)
 def deviation_check(request: DeviationCheckRequest) -> ApiResponse:
-    """Real-time deviation check + DP proximity trigger."""
+    """Real-time deviation check. Creates detector on first call per route."""
     detector = _get_or_create_detector(request.route_id)
 
-    ts = _parse_timestamp(request.timestamp)
     gps = GpsReading(
         lat=request.latitude,
         lng=request.longitude,
-        timestamp=ts,
+        timestamp=request.timestamp,
     )
     result = detector.update(gps)
 
-    return ApiResponse(
-        data=_deviation_result_to_response(
-            result, request.route_id, request.latitude, request.longitude
-        )
-    )
+    return ApiResponse(data=_deviation_result_to_response(result, request.route_id))
 
 
 # ---------------------------------------------------------------------------
@@ -1085,12 +979,8 @@ async def reroute_endpoint(request: RerouteRequest) -> ApiResponse:
             for loc in result.route_response.route_line_string
         ]
         _detector_cache[new_route_id] = DeviationDetector(new_linestring)
-        # Reset completed DPs for new route; clean up old route
-        _completed_dps[new_route_id] = set()
         if request.previous_route_id and request.previous_route_id in _detector_cache:
             del _detector_cache[request.previous_route_id]
-        if request.previous_route_id and request.previous_route_id in _completed_dps:
-            del _completed_dps[request.previous_route_id]
 
     return ApiResponse(data=result)
 
