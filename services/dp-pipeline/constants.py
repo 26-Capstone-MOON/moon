@@ -103,6 +103,16 @@ FACILITY_KOREAN_NAMES: dict[str, str] = {
 }
 
 # ---------------------------------------------------------------------------
+# Direction text for guidance (action → Korean direction word)
+# ---------------------------------------------------------------------------
+
+DIRECTION_TEXT: dict[str, str] = {
+    "LEFT_TURN": "왼쪽",
+    "RIGHT_TURN": "오른쪽",
+    "U_TURN": "뒤쪽",
+}
+
+# ---------------------------------------------------------------------------
 # P(h) — Category awareness value by Kakao category_group_code
 # ---------------------------------------------------------------------------
 

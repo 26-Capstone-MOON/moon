@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import math
 import uuid
-from typing import Optional
+from typing import Optional, Union
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
@@ -894,7 +894,7 @@ class DeviationCheckRequest(BaseModel):
     route_id: str
     latitude: float
     longitude: float
-    timestamp: str | float = ""  # ISO string from frontend or epoch float
+    timestamp: Union[str, float] = ""  # ISO string from frontend or epoch float
     speed: float = 0.0
 
 
@@ -1113,7 +1113,8 @@ async def chat_endpoint(request: ConversationRequest) -> ApiResponse:
     if route is None:
         raise HTTPException(status_code=404, detail="Route not found")
 
-    result = await conversation_chat(request, route)
+    completed = _completed_dps.get(request.route_id, set())
+    result = await conversation_chat(request, route, completed_dp_ids=completed)
     return ApiResponse(data=result)
 
 
