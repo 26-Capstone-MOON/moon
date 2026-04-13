@@ -31,9 +31,9 @@ import CurrentLocationMarker from '../components/map/CurrentLocationMarker';
 import DeviationBanner from '../components/guide/DeviationBanner';
 import ErrorToast from '../components/common/ErrorToast';
 import LoadingOverlay from '../components/common/LoadingOverlay';
-import { requestReroute } from '../services/navigationApi';
+// requestReroute import removed — reroute handled by WebSocket server
 import { toCamelCase } from '../utils/caseConverter';
-import { extractErrorMessage } from '../utils/errorHandler';
+// extractErrorMessage import removed — no longer used after reroute cleanup
 import type { RootStackParamList } from '../types/navigation';
 import { formatTime } from '../utils/formatTime';
 import { formatDistance } from '../utils/formatDistance';
@@ -181,12 +181,28 @@ export default function NavigationScreen({ navigation, route }: Props) {
       console.log('[WS] ApiResponse 래퍼 감지 → data 필드 추출');
       payload = (payload as any).data;
     }
-    const camelData = toCamelCase(payload) as Parameters<typeof updateFromTracking>[0];
+    const camelData = toCamelCase(payload) as any;
+
+    // Reroute response from WebSocket (has routeId + decisionPoints = new route data)
+    if (camelData.routeId && camelData.decisionPoints) {
+      console.log('[WS] 재경로 응답 수신 → routeStore 업데이트, routeId:', camelData.routeId);
+      setRouteData(camelData);
+      setLocalIndex(0);
+      setIsRerouting(false);
+      return;
+    }
+
     console.log('[WS] trigger:', camelData.trigger, '/ state:', camelData.navigationState,
       '/ dpDist:', camelData.distanceToDp?.toFixed?.(1),
       '/ guidance:', camelData.guidance?.primary?.substring(0, 30));
+
+    // DEVIATION_CONFIRMED → show rerouting UI (actual reroute handled by WebSocket server)
+    if (camelData.navigationState === 'DEVIATION_CONFIRMED') {
+      setIsRerouting(true);
+    }
+
     updateFromTracking(camelData);
-  }, [updateFromTracking]);
+  }, [updateFromTracking, setRouteData]);
 
   const { connectionState, send, connect, disconnect } = useWebSocket({
     url: 'ws://10.0.2.2:8080/api/tracking',
@@ -194,7 +210,7 @@ export default function NavigationScreen({ navigation, route }: Props) {
     onError: (msg) => showError(msg),
   });
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const rerouteCalledRef = useRef(false);
+  // rerouteCalledRef removed — reroute handled by WebSocket server
   const translateX = useRef(new Animated.Value(0)).current;
   const bottomSheetRef = useRef<BottomSheet>(null);
 
@@ -337,29 +353,7 @@ export default function NavigationScreen({ navigation, route }: Props) {
     };
   }, [localIndex, isNavigating, isLastDP, isFocused, dpList.length, connectionState]);
 
-  const handleReroute = useCallback(async () => {
-    const routeId = routeData?.routeId;
-    if (!routeId || isRerouting) { return; }
-
-    const currentLocation = currentDP?.location;
-    if (!currentLocation) {
-      showError('현재 위치를 가져올 수 없어요');
-      return;
-    }
-
-    setIsRerouting(true);
-    try {
-      const result = await requestReroute(routeId, currentLocation);
-      const camelResult = toCamelCase(result);
-      setRouteData(camelResult);
-      setLocalIndex(0);
-    } catch (e) {
-      showError(extractErrorMessage(e));
-    } finally {
-      setIsRerouting(false);
-      rerouteCalledRef.current = false;
-    }
-  }, [routeData?.routeId, isRerouting, currentDP?.location, showError, setRouteData]);
+  // handleReroute removed — reroute is handled by WebSocket server automatically
 
   // Send GPS to server via WebSocket when position updates
   useEffect(() => {
@@ -401,17 +395,9 @@ export default function NavigationScreen({ navigation, route }: Props) {
     }
   }, [navigationState, stopTracking, disconnect]);
 
-  // Auto-trigger reroute on DEVIATION_CONFIRMED or REROUTING trigger
-  useEffect(() => {
-    if (
-      (navigationState === 'DEVIATION_CONFIRMED' || trigger === 'REROUTING') &&
-      !rerouteCalledRef.current &&
-      !isRerouting
-    ) {
-      rerouteCalledRef.current = true;
-      handleReroute();
-    }
-  }, [navigationState, trigger, isRerouting, handleReroute]);
+  // Reroute is handled by WebSocket server (TrackingWebSocketHandler)
+  // — no REST call needed from frontend. The reroute response arrives
+  // via WebSocket and is detected in handleWsMessage above.
 
   const handleDismissToast = useCallback(() => setToastVisible(false), []);
 
