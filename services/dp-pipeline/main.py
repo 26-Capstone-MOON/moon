@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import math
 import uuid
-from typing import Optional, Union
+from typing import Union
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
@@ -24,6 +24,7 @@ from geo import (
     interpolate_linestring,
     interpolate_linestring_with_distance,
     point_to_linestring_distance,
+    project_distance_on_linestring,
 )
 from midpoint_service import insert_midpoints
 from places_service import fetch_is_open_statuses, poi_identity_key
@@ -553,7 +554,7 @@ async def _build_live_pipeline_summary(
             })
             continue
 
-        pois, _sr = await search_pois_for_dp(
+        pois = await search_pois_for_dp(
             dp.location.latitude,
             dp.location.longitude,
             bearing,
@@ -774,7 +775,6 @@ async def _build_route_response(request: RouteRequest) -> RouteResponse:
             continue  # already has landmark/guidance/panorama from midpoint_service
 
         bearing = _get_dp_bearing(dp, tmap_result.coordinates)
-        search_radius = 50.0  # default; overwritten by search_pois_for_dp
 
         if dp.dp_type == "CROSSWALK":
             crosswalk_result = await search_pois_for_crosswalk(
@@ -790,18 +790,12 @@ async def _build_route_response(request: RouteRequest) -> RouteResponse:
                 else {}
             )
             before_best = (
-                select_landmark(
-                    crosswalk_result.before, weather, is_open_map,
-                    search_radius=crosswalk_result.before_search_radius,
-                )
+                select_landmark(crosswalk_result.before, weather, is_open_map)
                 if crosswalk_result.before
                 else None
             )
             after_best = (
-                select_landmark(
-                    crosswalk_result.after, weather, is_open_map,
-                    search_radius=crosswalk_result.after_search_radius,
-                )
+                select_landmark(crosswalk_result.after, weather, is_open_map)
                 if crosswalk_result.after
                 else None
             )
@@ -816,7 +810,7 @@ async def _build_route_response(request: RouteRequest) -> RouteResponse:
         elif dp.dp_type in ("DEPARTURE", "ARRIVAL"):
             pois = []
         else:
-            pois, search_radius = await search_pois_for_dp(
+            pois = await search_pois_for_dp(
                 dp.location.latitude,
                 dp.location.longitude,
                 bearing,
@@ -824,7 +818,7 @@ async def _build_route_response(request: RouteRequest) -> RouteResponse:
 
         if pois:
             is_open_map = await fetch_is_open_statuses(pois)
-            best = select_landmark(pois, weather, is_open_map, search_radius=search_radius)
+            best = select_landmark(pois, weather, is_open_map)
             if best is not None:
                 dp.selected_landmark = _build_selected_landmark(
                     best, is_open_map,
@@ -890,27 +884,26 @@ def route_get(route_id: str) -> ApiResponse:
 # ---------------------------------------------------------------------------
 
 class DeviationCheckRequest(BaseModel):
-    """Lightweight deviation check request matching Spring Boot WebSocket relay."""
+    """Lightweight deviation check request matching frontend WebSocket JSON."""
     route_id: str
     latitude: float
     longitude: float
-    timestamp: Union[str, float] = ""  # ISO string from frontend or epoch float
+    timestamp: Union[str, float] = ""
     speed: float = 0.0
 
-
-def _parse_timestamp(raw: str | float) -> float:
-    """Convert ISO string or epoch float to epoch seconds."""
-    if isinstance(raw, (int, float)) and raw > 0:
-        return float(raw)
-    if isinstance(raw, str) and raw:
-        from datetime import datetime, timezone
-        try:
-            dt = datetime.fromisoformat(raw.replace("Z", "+00:00"))
-            return dt.timestamp()
-        except ValueError:
-            pass
-    import time
-    return time.time()
+    def epoch_timestamp(self) -> float:
+        """Convert ISO string or epoch float to epoch seconds."""
+        if isinstance(self.timestamp, (int, float)) and self.timestamp > 0:
+            return float(self.timestamp)
+        if isinstance(self.timestamp, str) and self.timestamp:
+            from datetime import datetime
+            try:
+                dt = datetime.fromisoformat(self.timestamp.replace("Z", "+00:00"))
+                return dt.timestamp()
+            except ValueError:
+                pass
+        import time
+        return time.time()
 
 
 def _get_or_create_detector(route_id: str) -> DeviationDetector:
@@ -930,24 +923,44 @@ def _get_or_create_detector(route_id: str) -> DeviationDetector:
     return detector
 
 
-def _find_nearest_dp(
-    lat: float, lng: float, route: RouteResponse, route_id: str
-) -> tuple[DecisionPoint, float, int]:
-    """Find the current (next uncompleted) DP in route order.
+def _find_current_dp(
+    lat: float, lng: float, route: RouteResponse, route_id: str,
+    user_dfs: float,
+) -> tuple[DecisionPoint, float, int, DecisionPoint | None]:
+    """Find next uncompleted DP using distance_from_start progression.
 
-    Skips DPs already in _completed_dps for this route.
-    Returns (dp, distance_m, index).
+    Returns (current_dp, haversine_dist, index, just_passed_dp).
+    just_passed_dp is set when a DP was passed between this call and the last
+    (distance_from_start exceeded) so the caller can fire ARRIVAL for it.
     """
     completed = _completed_dps.get(route_id, set())
+    just_passed: DecisionPoint | None = None
+
+    # Check only the NEXT uncompleted DP (skip last DP = destination)
+    for dp in route.decision_points[:-1]:
+        if dp.dp_id in completed:
+            continue
+        # First uncompleted DP — check if passed
+        # Both conditions required to prevent projection overshoot:
+        #   1) user_dfs exceeded dp's distance_from_start
+        #   2) haversine distance is within 50m (was actually near the DP)
+        dp_haver = haversine(lat, lng, dp.location.latitude, dp.location.longitude)
+        if user_dfs > dp.distance_from_start and dp_haver < 20.0:
+            completed.add(dp.dp_id)
+            just_passed = dp
+        break  # only check one DP per call
+
+    # Return first uncompleted DP
     for i, dp in enumerate(route.decision_points):
         if dp.dp_id in completed:
             continue
         d = haversine(lat, lng, dp.location.latitude, dp.location.longitude)
-        return dp, d, i
-    # All DPs completed — fall back to last DP
+        return dp, d, i, just_passed
+
+    # All completed — fall back to last DP
     last = route.decision_points[-1]
     d = haversine(lat, lng, last.location.latitude, last.location.longitude)
-    return last, d, len(route.decision_points) - 1
+    return last, d, len(route.decision_points) - 1, just_passed
 
 
 def _deviation_result_to_response(
@@ -955,6 +968,7 @@ def _deviation_result_to_response(
     route_id: str,
     lat: float,
     lng: float,
+    route: RouteResponse | None,
 ) -> DeviationResponse:
     """Convert internal DeviationResult to API DeviationResponse."""
     state_mapping = {
@@ -980,48 +994,70 @@ def _deviation_result_to_response(
             trigger = "RETURN_DETECTED"
         guidance = Guidance(primary=result.message)
 
-    # On normal route: find nearest DP and generate PRE_ALERT / ARRIVAL trigger
-    route = _route_cache.get(route_id)
-    nearest_dp = route.decision_points[0] if route else None
-    distance_to_dp = result.distance_to_route_m
     current_dp_id = ""
+    distance_to_dp = result.distance_to_route_m
     progress: Progress | None = None
 
     if route and navigation_state == "ON_ROUTE":
-        # Ensure completed set exists for this route
         if route_id not in _completed_dps:
             _completed_dps[route_id] = set()
 
-        dp, dist, idx = _find_nearest_dp(lat, lng, route, route_id)
-        nearest_dp = dp
-        distance_to_dp = dist
+        # Compute user's distance_from_start for pass-through detection
+        linestring = [
+            (loc.latitude, loc.longitude) for loc in route.route_line_string
+        ]
+        user_dfs = project_distance_on_linestring(lat, lng, linestring)
+
+        dp, dist, idx, just_passed = _find_current_dp(
+            lat, lng, route, route_id, user_dfs,
+        )
         current_dp_id = dp.dp_id
+        distance_to_dp = dist
+
+        print(f"[DP-DEBUG] gps=({lat:.6f},{lng:.6f}), user_dfs={user_dfs:.1f}, "
+              f"current_dp={current_dp_id}, dp_dfs={dp.distance_from_start:.1f}, "
+              f"haversine={dist:.1f}, just_passed={just_passed.dp_id if just_passed else None}")
 
         # Check destination arrival first
         dest = route.decision_points[-1]
         dest_dist = haversine(lat, lng, dest.location.latitude, dest.location.longitude)
-        if dest_dist <= ARRIVAL_DISTANCE:
+        if dest_dist <= ARRIVAL_DISTANCE or (user_dfs >= dest.distance_from_start and dest_dist < 20.0):
             navigation_state = "ARRIVED"
             trigger = "ARRIVAL"
-            guidance = dest.guidance
+            guidance = Guidance(
+                primary=dest.guidance.primary,
+                pre_alert=dest.guidance.pre_alert,
+                action=dest.guidance.action,
+            )
             current_dp_id = dest.dp_id
             _completed_dps[route_id].add(dest.dp_id)
+        elif just_passed is not None:
+            # A DP was passed (distance_from_start exceeded) — fire ARRIVAL
+            trigger = "ARRIVAL"
+            guidance = Guidance(
+                primary=just_passed.guidance.primary,
+                pre_alert=just_passed.guidance.pre_alert,
+                action=just_passed.guidance.action,
+            )
         else:
-            dp_trigger = _classify_trigger(dist)
-            if dp_trigger is not None:
-                trigger = dp_trigger
-                if dp_trigger == "PRE_ALERT":
-                    guidance = Guidance(
-                        primary=dp.guidance.primary,
-                        pre_alert=dp.guidance.pre_alert,
-                        action=dp.guidance.action,
-                    )
-                elif dp_trigger == "ARRIVAL":
-                    guidance = dp.guidance
-                    # Mark this DP as completed so next call targets the next DP
-                    _completed_dps[route_id].add(dp.dp_id)
+            # DP proximity trigger (haversine-based)
+            if dist <= ARRIVAL_DISTANCE:
+                trigger = "ARRIVAL"
+                guidance = Guidance(
+                    primary=dp.guidance.primary,
+                    pre_alert=dp.guidance.pre_alert,
+                    action=dp.guidance.action,
+                )
+                _completed_dps[route_id].add(dp.dp_id)
+            elif dist <= PRE_ALERT_DISTANCE:
+                trigger = "PRE_ALERT"
+                guidance = Guidance(
+                    primary=dp.guidance.pre_alert or dp.guidance.primary,
+                    pre_alert=dp.guidance.pre_alert,
+                    action=dp.guidance.action,
+                )
 
-        # Build progress from tracked completed set
+        # Build progress
         completed = [d.dp_id for d in route.decision_points if d.dp_id in _completed_dps[route_id]]
         remaining = [d.dp_id for d in route.decision_points if d.dp_id not in _completed_dps[route_id]]
         dest_loc = route.decision_points[-1].location
@@ -1034,7 +1070,7 @@ def _deviation_result_to_response(
             time_remaining=dist_remaining / WALKING_SPEED_MPS,
         )
     elif route:
-        current_dp_id = nearest_dp.dp_id if nearest_dp else ""
+        current_dp_id = route.decision_points[0].dp_id
 
     return DeviationResponse(
         navigation_state=navigation_state,
@@ -1048,22 +1084,21 @@ def _deviation_result_to_response(
 
 @app.post("/api/deviation", response_model=ApiResponse)
 def deviation_check(request: DeviationCheckRequest) -> ApiResponse:
-    """Real-time deviation check + DP proximity trigger."""
+    """Real-time deviation check. Creates detector on first call per route."""
     detector = _get_or_create_detector(request.route_id)
 
-    ts = _parse_timestamp(request.timestamp)
     gps = GpsReading(
         lat=request.latitude,
         lng=request.longitude,
-        timestamp=ts,
+        timestamp=request.epoch_timestamp(),
     )
     result = detector.update(gps)
 
-    return ApiResponse(
-        data=_deviation_result_to_response(
-            result, request.route_id, request.latitude, request.longitude
-        )
-    )
+    route = _route_cache.get(request.route_id)
+
+    return ApiResponse(data=_deviation_result_to_response(
+        result, request.route_id, request.latitude, request.longitude, route,
+    ))
 
 
 # ---------------------------------------------------------------------------
@@ -1092,7 +1127,6 @@ async def reroute_endpoint(request: RerouteRequest) -> ApiResponse:
             for loc in result.route_response.route_line_string
         ]
         _detector_cache[new_route_id] = DeviationDetector(new_linestring)
-        # Reset completed DPs for new route; clean up old route
         _completed_dps[new_route_id] = set()
         if request.previous_route_id and request.previous_route_id in _detector_cache:
             del _detector_cache[request.previous_route_id]
@@ -1113,8 +1147,7 @@ async def chat_endpoint(request: ConversationRequest) -> ApiResponse:
     if route is None:
         raise HTTPException(status_code=404, detail="Route not found")
 
-    completed = _completed_dps.get(request.route_id, set())
-    result = await conversation_chat(request, route, completed_dp_ids=completed)
+    result = await conversation_chat(request, route)
     return ApiResponse(data=result)
 
 
