@@ -30,3 +30,8 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+# ---------------------------------------------------------------------------
+# Mock guidance toggle — overwrite pipeline guidance with hand-crafted demo text
+# ---------------------------------------------------------------------------
+MOCK_GUIDANCE = True

@@ -972,6 +972,17 @@ async def _build_route_response(request: RouteRequest) -> RouteResponse:
 async def route_create(request: RouteRequest) -> ApiResponse:
     """Live pipeline: Tmap → DP → midpoint → POI/scoring → RouteResponse."""
     route_response = await _build_route_response(request)
+
+    # Mock guidance override for demo route
+    from config import MOCK_GUIDANCE
+    if MOCK_GUIDANCE:
+        from mock_guidance import apply_mock_guidance
+        route_response = apply_mock_guidance(
+            route_response,
+            route_response.origin,
+            route_response.destination,
+        )
+
     _route_cache[route_response.route_id] = route_response
     return ApiResponse(data=route_response)
 
