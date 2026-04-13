@@ -95,6 +95,77 @@ def _particle(name: str, with_batchim: str, without_batchim: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Tmap description converter
+# ---------------------------------------------------------------------------
+
+import re
+
+# Strip leading turn action prefix ("좌회전 후 ", "우회전 후 ", etc.)
+_TMAP_TURN_PREFIX = re.compile(
+    r"^(?:좌회전|우회전|유턴)\s*후\s*",
+)
+
+# "~를 따라 Xm 이동" → road name
+_TMAP_MOVE_PATTERN = re.compile(
+    r"^(.+?)[을를]?\s*따라\s*\d+m\s*이동$",
+)
+
+# "~에서 우측/좌측 횡단보도 후 Xm 이동" or "~ 횡단보도"
+_TMAP_CROSS_AFTER_PATTERN = re.compile(
+    r"^(.+?)에서\s*(?:우측|좌측|직진)\s*횡단보도.*$",
+)
+_TMAP_CROSS_SIMPLE_PATTERN = re.compile(
+    r"^(.+?)\s*횡단보도.*$",
+)
+
+
+def _convert_tmap_description(desc: str | None) -> str | None:
+    """Convert Tmap description to a road/place name for guidance fallback.
+
+    Strips turn-action prefixes (already handled by action_text) and
+    extracts just the road or place name.
+
+    Tmap patterns handled:
+      "좌회전 후 강남대로를 따라 67m 이동"  → "강남대로"
+      "서운로를 따라 117m 이동"             → "서운로"
+      "콜드스톤크리머리 역삼점에서 우측 횡단보도 후 53m 이동" → "콜드스톤크리머리 역삼점"
+      "테헤란로 횡단보도"                    → "테헤란로"
+
+    Returns None if description is empty, too short, or not convertible.
+    """
+    if not desc or len(desc) < 3:
+        return None
+
+    # Strip leading turn prefix — action is handled separately
+    text = _TMAP_TURN_PREFIX.sub("", desc)
+
+    # "~를 따라 Xm 이동" → road name only
+    m = _TMAP_MOVE_PATTERN.match(text)
+    if m:
+        road = m.group(1).rstrip()
+        if road:
+            return road
+        return None
+
+    # "~에서 우측/좌측 횡단보도 후 ..." → place name only
+    m = _TMAP_CROSS_AFTER_PATTERN.match(text)
+    if m:
+        place = m.group(1).rstrip()
+        if place:
+            return place
+        return None
+
+    # "~ 횡단보도" → road name only
+    m = _TMAP_CROSS_SIMPLE_PATTERN.match(text)
+    if m:
+        road = m.group(1).rstrip()
+        if road:
+            return road
+
+    return None
+
+
+# ---------------------------------------------------------------------------
 # GuidanceInput dataclass
 # ---------------------------------------------------------------------------
 
@@ -207,8 +278,7 @@ def _generate_departure(
     Returns:
         Guidance with fixed departure text.
     """
-    action_text = _get_action_text(action)
-    primary = f"안내를 시작합니다. {action_text}하세요."
+    primary = "안내를 시작합니다. 직진하세요."
     return Guidance(primary=primary, pre_alert=None, action=None)
 
 
@@ -240,6 +310,7 @@ def _generate_direction_change(
     prev_landmark_name: str | None,
     distance_from_start: float,
     next_dp_distance: float | None,
+    tmap_description: str | None = None,
 ) -> Guidance:
     """Generate DIRECTION_CHANGE guidance (3-step pattern).
 
@@ -252,6 +323,7 @@ def _generate_direction_change(
         prev_landmark_name: previous DP's landmark name.
         distance_from_start: distance from route start.
         next_dp_distance: distance to next DP.
+        tmap_description: original Tmap description for fallback.
 
     Returns:
         Guidance with primary and pre_alert.
@@ -266,7 +338,12 @@ def _generate_direction_change(
     if landmark is not None and match_status is not None:
         primary = f"{lm_text}에서 {action_text}하세요."
     else:
-        primary = f"여기서 {action_text}하세요."
+        # Fallback: use Tmap road/place name if available
+        tmap_name = _convert_tmap_description(tmap_description)
+        if tmap_name:
+            primary = f"{tmap_name}에서 {action_text}하세요."
+        else:
+            primary = f"여기서 {action_text}하세요."
 
     # pre_alert
     if landmark is not None and match_status is not None:
@@ -298,6 +375,7 @@ def _generate_crosswalk(
     after_landmark: ScoredPoi | None = None,
     after_match_status: str | None = None,
     after_environment_desc: str | None = None,
+    tmap_description: str | None = None,
 ) -> Guidance:
     """Generate CROSSWALK guidance (before + after crossing).
 
@@ -313,6 +391,7 @@ def _generate_crosswalk(
         after_landmark: after-crossing landmark.
         after_match_status: after-crossing match_status.
         after_environment_desc: after-crossing environment desc.
+        tmap_description: original Tmap description for fallback.
 
     Returns:
         Guidance with primary and pre_alert.
@@ -344,7 +423,12 @@ def _generate_crosswalk(
     if after_landmark is not None and after_match_status is not None:
         primary = f"횡단보도를 건너 {after_text} 방향으로 직진하세요."
     else:
-        primary = "횡단보도를 건너 직진하세요."
+        # Fallback: use Tmap place/road name if available
+        tmap_name = _convert_tmap_description(tmap_description)
+        if tmap_name:
+            primary = f"횡단보도를 건너 {tmap_name} 방향으로 직진하세요."
+        else:
+            primary = "횡단보도를 건너 직진하세요."
 
     return Guidance(primary=primary, pre_alert=pre_alert, action=action)
 
@@ -477,6 +561,7 @@ def generate_guidance(
     after_landmark: ScoredPoi | None = None,
     after_match_status: str | None = None,
     after_environment_desc: str | None = None,
+    tmap_description: str | None = None,
 ) -> Guidance:
     """Generate guidance text for a single DP.
 
@@ -495,6 +580,7 @@ def generate_guidance(
         after_landmark: After-crossing landmark (for CROSSWALK).
         after_match_status: After-crossing match_status (for CROSSWALK).
         after_environment_desc: After-crossing env desc (for CROSSWALK).
+        tmap_description: Original Tmap description (fallback for no-POI DPs).
 
     Returns:
         Guidance with primary, pre_alert, and action fields.
@@ -512,6 +598,7 @@ def generate_guidance(
             turn_type, action, selected_landmark, match_status,
             environment_desc, prev_landmark_name,
             distance_from_start, next_dp_distance,
+            tmap_description=tmap_description,
         )
 
     if dp_type == "CROSSWALK":
@@ -520,6 +607,7 @@ def generate_guidance(
             environment_desc, facility_visible,
             distance_from_start, next_dp_distance,
             after_landmark, after_match_status, after_environment_desc,
+            tmap_description=tmap_description,
         )
 
     if dp_type == "VERTICAL_MOVE":

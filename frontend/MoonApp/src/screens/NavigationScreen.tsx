@@ -282,15 +282,17 @@ export default function NavigationScreen({ navigation, route }: Props) {
     }
   }, [currentDP, ttsEnabled]);
 
-  // TTS on trigger change (deduplicated)
+  // TTS on trigger change (deduplicated by trigger + dpId)
   const guidance = useNavigationStore(s => s.guidance);
-  const lastSpokenTrigger = useRef<string | null>(null);
+  const currentDpId = useNavigationStore(s => s.currentDpId);
+  const lastSpokenKey = useRef<string | null>(null);
   useEffect(() => {
     if (!trigger) {
-      lastSpokenTrigger.current = null;
+      lastSpokenKey.current = null;
       return;
     }
-    if (lastSpokenTrigger.current === trigger) { return; }
+    const spokenKey = `${trigger}_${currentDpId ?? ''}`;
+    if (lastSpokenKey.current === spokenKey) { return; }
 
     // 재라우팅 중에는 DP 안내 트리거 무시 (이탈/재라우팅 안내만 허용)
     if (isRerouting && (trigger === 'PRE_ALERT' || trigger === 'ARRIVAL' || trigger === 'CONFIRMATION')) {
@@ -298,7 +300,7 @@ export default function NavigationScreen({ navigation, route }: Props) {
       return;
     }
 
-    console.log('[TTS] trigger 감지:', trigger, '/ guidance:', JSON.stringify(guidance));
+    console.log('[TTS] trigger 감지:', trigger, '/ dpId:', currentDpId, '/ guidance:', JSON.stringify(guidance));
     let text: string | null = null;
     switch (trigger) {
       case 'PRE_ALERT':
@@ -321,25 +323,24 @@ export default function NavigationScreen({ navigation, route }: Props) {
         break;
     }
     if (text) {
-      lastSpokenTrigger.current = trigger;
+      lastSpokenKey.current = spokenKey;
       console.log('[TTS] 재생:', text);
       if (ttsEnabled) {
         ttsStop();
         ttsSpeak(text);
       }
     }
-  }, [trigger, guidance, ttsEnabled, isRerouting]);
+  }, [trigger, guidance, currentDpId, ttsEnabled, isRerouting]);
 
   // Sync localIndex from server's currentDpId
-  const serverDpId = useNavigationStore(s => s.currentDpId);
   useEffect(() => {
-    if (!serverDpId || connectionState !== 'CONNECTED') { return; }
-    const idx = dpList.findIndex(dp => dp.dpId === serverDpId);
+    if (!currentDpId || connectionState !== 'CONNECTED') { return; }
+    const idx = dpList.findIndex(dp => dp.dpId === currentDpId);
     if (idx >= 0 && idx !== localIndex) {
-      console.log('[NAV] 서버 DP 동기화:', serverDpId, '/ index:', idx);
+      console.log('[NAV] 서버 DP 동기화:', currentDpId, '/ index:', idx);
       setLocalIndex(idx);
     }
-  }, [serverDpId, dpList, connectionState, localIndex]);
+  }, [currentDpId, dpList, connectionState, localIndex]);
 
   // Auto-progress mock — only when WebSocket is NOT connected
   useEffect(() => {

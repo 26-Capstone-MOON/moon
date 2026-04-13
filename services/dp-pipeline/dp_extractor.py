@@ -122,6 +122,7 @@ def extract_decision_points(
             guidance=_make_placeholder_guidance(point.turn_type, point.description),
             selected_landmark=None,
             panorama_request=None,
+            tmap_description=point.description or None,
         )
         decision_points.append(dp)
 

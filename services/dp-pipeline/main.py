@@ -50,6 +50,7 @@ from schemas import (
     RouteResponse,
     SelectedLandmark,
 )
+from guidance_generator import generate_guidance
 from scoring_service import ScoredPoi, select_landmark
 from smoke_navigation_check import build_report
 from tmap_service import request_pedestrian_route
@@ -760,6 +761,12 @@ async def _build_route_response(request: RouteRequest) -> RouteResponse:
 
     decision_points = extract_decision_points(tmap_result)
 
+    print(f"\n{'='*60}")
+    print(f"[STEP1] DP 추출 완료: {len(decision_points)}개")
+    for dp in decision_points:
+        print(f"  dp={dp.dp_id}, type={dp.dp_type}, turnType={dp.turn_type}, dist={dp.distance_from_start:.0f}m")
+    print(f"{'='*60}")
+
     weather = await fetch_weather(request.origin_lat, request.origin_lng)
 
     # Midpoint insertion — virtual DPs come back with landmark + guidance + panorama
@@ -769,7 +776,19 @@ async def _build_route_response(request: RouteRequest) -> RouteResponse:
         weather=weather,
     )
 
+    print(f"\n[STEP2] Midpoint 삽입 후: {len(decision_points)}개")
+    for dp in decision_points:
+        lm = dp.selected_landmark.name if dp.selected_landmark else "NONE"
+        g = dp.guidance.primary[:40] if dp.guidance else "NO_GUIDANCE"
+        print(f"  dp={dp.dp_id}, type={dp.dp_type}, landmark={lm}, guidance={g}")
+    print(f"{'='*60}")
+
     # For non-VIRTUAL DPs: POI search + scoring + landmark selection + panorama
+    # Track ScoredPoi per DP for guidance generation (STEP 6)
+    _scored_map: dict[str, ScoredPoi | None] = {}
+    _crosswalk_before: dict[str, ScoredPoi | None] = {}
+    _crosswalk_after: dict[str, ScoredPoi | None] = {}
+
     for dp in decision_points:
         if dp.dp_type == "VIRTUAL":
             continue  # already has landmark/guidance/panorama from midpoint_service
@@ -784,6 +803,11 @@ async def _build_route_response(request: RouteRequest) -> RouteResponse:
             )
             pois = []
             combined_pois = crosswalk_result.before + crosswalk_result.after
+            print(f"  [STEP3] CROSSWALK dp={dp.dp_id}: before_pois={len(crosswalk_result.before)}, after_pois={len(crosswalk_result.after)}")
+            for p in crosswalk_result.before[:3]:
+                print(f"    before: {p.place_name} ({p.category_group_code}) dist={p.distance:.0f}m pos={p.position}")
+            for p in crosswalk_result.after[:3]:
+                print(f"    after:  {p.place_name} ({p.category_group_code}) dist={p.distance:.0f}m pos={p.position}")
             is_open_map = (
                 await fetch_is_open_statuses(combined_pois)
                 if combined_pois
@@ -799,22 +823,29 @@ async def _build_route_response(request: RouteRequest) -> RouteResponse:
                 if crosswalk_result.after
                 else None
             )
+            b_name = f"{before_best.poi.place_name}(score={before_best.s_final:.2f})" if before_best else "NONE"
+            a_name = f"{after_best.poi.place_name}(score={after_best.s_final:.2f})" if after_best else "NONE"
+            print(f"    → before_best={b_name}, after_best={a_name}")
             primary_landmark = before_best or after_best
             if primary_landmark is not None:
                 dp.selected_landmark = _build_selected_landmark(
                     primary_landmark, is_open_map,
                 )
-                dp.guidance = _build_crosswalk_guidance(
-                    dp.guidance, before_best, after_best,
-                )
+            _scored_map[dp.dp_id] = before_best
+            _crosswalk_before[dp.dp_id] = before_best
+            _crosswalk_after[dp.dp_id] = after_best
         elif dp.dp_type in ("DEPARTURE", "ARRIVAL"):
             pois = []
+            _scored_map[dp.dp_id] = None
         else:
             pois = await search_pois_for_dp(
                 dp.location.latitude,
                 dp.location.longitude,
                 bearing,
             )
+            print(f"  [STEP3] {dp.dp_type} dp={dp.dp_id}: pois={len(pois)}")
+            for p in pois[:5]:
+                print(f"    poi: {p.place_name} ({p.category_group_code}) dist={p.distance:.0f}m pos={p.position}")
 
         if pois:
             is_open_map = await fetch_is_open_statuses(pois)
@@ -823,6 +854,15 @@ async def _build_route_response(request: RouteRequest) -> RouteResponse:
                 dp.selected_landmark = _build_selected_landmark(
                     best, is_open_map,
                 )
+                _scored_map[dp.dp_id] = best
+                print(f"    → selected: {best.poi.place_name} (s_final={best.s_final:.2f}, P={best.p_h:.2f}, D={best.d_w:.2f}, U={best.u:.2f}, C={best.c_bonus:.2f})")
+            else:
+                _scored_map.setdefault(dp.dp_id, None)
+                print(f"    → selected: NONE (scoring returned None)")
+        else:
+            _scored_map.setdefault(dp.dp_id, None)
+            if dp.dp_type not in ("DEPARTURE", "ARRIVAL"):
+                print(f"    → selected: NONE (no POIs found)")
 
         # Panorama: VIRTUAL already handled; regular DPs get 3-direction
         if dp.panorama_request is None:
@@ -839,6 +879,72 @@ async def _build_route_response(request: RouteRequest) -> RouteResponse:
                 dp.panorama_request = _build_3dir_panorama(
                     dp.location, dp.turn_type,
                 )
+
+    # ----- STEP 6: Generate proper Korean guidance (replace Tmap placeholders) -----
+    prev_landmark_name: str | None = None
+    for i, dp in enumerate(decision_points):
+        if dp.dp_type == "VIRTUAL":
+            # Keep midpoint_service guidance; track landmark for prev chaining
+            if dp.selected_landmark is not None:
+                prev_landmark_name = dp.selected_landmark.name
+            else:
+                prev_landmark_name = None
+            continue
+
+        scored = _scored_map.get(dp.dp_id)
+
+        # next_dp_distance
+        next_dp_distance: float | None = None
+        if i < len(decision_points) - 1:
+            next_dp_distance = (
+                decision_points[i + 1].distance_from_start
+                - dp.distance_from_start
+            )
+
+        # next_action for DEPARTURE (what action comes at the next DP)
+        next_action: str | None = None
+        if dp.dp_type == "DEPARTURE" and i < len(decision_points) - 1:
+            next_tt = decision_points[i + 1].turn_type
+            if next_tt is not None:
+                from constants import TURN_TYPE_TO_ACTION
+                next_action = TURN_TYPE_TO_ACTION.get(next_tt)
+
+        dp.guidance = generate_guidance(
+            dp_type=dp.dp_type,
+            turn_type=dp.turn_type,
+            selected_landmark=scored,
+            match_status="POI_ONLY" if scored else None,
+            environment_desc=None,
+            facility_visible=None,
+            prev_landmark_name=prev_landmark_name,
+            next_dp_distance=next_dp_distance,
+            dest_name=request.dest_name or "",
+            distance_from_start=dp.distance_from_start,
+            next_action=next_action,
+            after_landmark=_crosswalk_after.get(dp.dp_id),
+            after_match_status=(
+                "POI_ONLY" if _crosswalk_after.get(dp.dp_id) else None
+            ),
+            after_environment_desc=None,
+            tmap_description=dp.tmap_description,
+        )
+
+        if scored is not None:
+            prev_landmark_name = scored.poi.place_name
+        else:
+            prev_landmark_name = None
+
+    print(f"\n{'='*60}")
+    print(f"[STEP6] 최종 DP 상태 ({len(decision_points)}개)")
+    print(f"{'='*60}")
+    for dp in decision_points:
+        lm = dp.selected_landmark.name if dp.selected_landmark else "NONE"
+        pri = dp.guidance.primary[:50] if dp.guidance else "NO_GUIDANCE"
+        pre = (dp.guidance.pre_alert[:40] if dp.guidance and dp.guidance.pre_alert else "null")
+        print(f"[PIPE] dp={dp.dp_id}, type={dp.dp_type}, landmark={lm}")
+        print(f"       primary={pri}")
+        print(f"       preAlert={pre}")
+    print(f"{'='*60}\n")
 
     route_id = f"route-{uuid.uuid4().hex[:10]}"
     origin = Location(latitude=request.origin_lat, longitude=request.origin_lng)

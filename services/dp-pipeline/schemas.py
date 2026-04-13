@@ -82,6 +82,11 @@ class DecisionPoint(BaseModel):
     guidance: Guidance
     selected_landmark: Optional[SelectedLandmark] = None
     panorama_request: Optional[PanoramaRequest] = None
+    tmap_description: Optional[str] = Field(
+        default=None,
+        exclude=True,
+        description="Original Tmap description. Internal only, excluded from API response.",
+    )
 
 
 # ---------------------------------------------------------------------------
