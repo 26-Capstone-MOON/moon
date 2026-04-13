@@ -3,8 +3,6 @@
 Generates Guidance (primary + pre_alert + action) based on DP type,
 selected landmark, match_status, Vision environment descriptions,
 and facility visibility.
-
-Conversational tone: no distance numbers, friendly style.
 """
 
 from __future__ import annotations
@@ -12,7 +10,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from constants import (
-    DIRECTION_TEXT,
     FACILITY_KOREAN_NAMES,
     FACILITY_TURN_TYPES,
     TURN_TYPE_TO_ACTION,
@@ -31,7 +28,7 @@ POSITION_TEXT: dict[str, str] = {
 }
 
 # ---------------------------------------------------------------------------
-# Action text mapping (GuidanceAction -> Korean)
+# Action text mapping (GuidanceAction → Korean)
 # ---------------------------------------------------------------------------
 
 ACTION_TEXT: dict[str, str] = {
@@ -47,15 +44,15 @@ ACTION_TEXT: dict[str, str] = {
 }
 
 # ---------------------------------------------------------------------------
-# Facility action text (turnType -> full sentence)
+# Facility action text (turnType → full sentence)
 # ---------------------------------------------------------------------------
 
 FACILITY_ACTION_TEXT: dict[int, str] = {
     125: "육교를 건너세요.",
-    126: "지하보도를 내려가세요.",
-    127: "계단을 올라가세요.",
-    128: "계단을 내려가세요.",
-    129: "계단을 올라가세요.",
+    126: "지하보도로 내려가세요.",
+    127: "계단으로 올라가세요.",
+    128: "계단으로 내려가세요.",
+    129: "계단으로 올라가세요.",
     218: "엘리베이터를 이용하세요.",
 }
 
@@ -95,6 +92,77 @@ def _particle(name: str, with_batchim: str, without_batchim: str) -> str:
     last_char = name.rstrip()[-1]
     particle = with_batchim if _has_batchim(last_char) else without_batchim
     return f"{name}{particle}"
+
+
+# ---------------------------------------------------------------------------
+# Tmap description converter
+# ---------------------------------------------------------------------------
+
+import re
+
+# Strip leading turn action prefix ("좌회전 후 ", "우회전 후 ", etc.)
+_TMAP_TURN_PREFIX = re.compile(
+    r"^(?:좌회전|우회전|유턴)\s*후\s*",
+)
+
+# "~를 따라 Xm 이동" → road name
+_TMAP_MOVE_PATTERN = re.compile(
+    r"^(.+?)[을를]?\s*따라\s*\d+m\s*이동$",
+)
+
+# "~에서 우측/좌측 횡단보도 후 Xm 이동" or "~ 횡단보도"
+_TMAP_CROSS_AFTER_PATTERN = re.compile(
+    r"^(.+?)에서\s*(?:우측|좌측|직진)\s*횡단보도.*$",
+)
+_TMAP_CROSS_SIMPLE_PATTERN = re.compile(
+    r"^(.+?)\s*횡단보도.*$",
+)
+
+
+def _convert_tmap_description(desc: str | None) -> str | None:
+    """Convert Tmap description to a road/place name for guidance fallback.
+
+    Strips turn-action prefixes (already handled by action_text) and
+    extracts just the road or place name.
+
+    Tmap patterns handled:
+      "좌회전 후 강남대로를 따라 67m 이동"  → "강남대로"
+      "서운로를 따라 117m 이동"             → "서운로"
+      "콜드스톤크리머리 역삼점에서 우측 횡단보도 후 53m 이동" → "콜드스톤크리머리 역삼점"
+      "테헤란로 횡단보도"                    → "테헤란로"
+
+    Returns None if description is empty, too short, or not convertible.
+    """
+    if not desc or len(desc) < 3:
+        return None
+
+    # Strip leading turn prefix — action is handled separately
+    text = _TMAP_TURN_PREFIX.sub("", desc)
+
+    # "~를 따라 Xm 이동" → road name only
+    m = _TMAP_MOVE_PATTERN.match(text)
+    if m:
+        road = m.group(1).rstrip()
+        if road:
+            return road
+        return None
+
+    # "~에서 우측/좌측 횡단보도 후 ..." → place name only
+    m = _TMAP_CROSS_AFTER_PATTERN.match(text)
+    if m:
+        place = m.group(1).rstrip()
+        if place:
+            return place
+        return None
+
+    # "~ 횡단보도" → road name only
+    m = _TMAP_CROSS_SIMPLE_PATTERN.match(text)
+    if m:
+        road = m.group(1).rstrip()
+        if road:
+            return road
+
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -142,19 +210,25 @@ def _landmark_with_env(
     landmark: ScoredPoi | None,
     match_status: str | None,
     environment_desc: str | None,
-) -> str | None:
+    distance_from_start: float = 0.0,
+    next_dp_distance: float | None = None,
+) -> str:
     """Build landmark reference text based on match_status.
 
     Args:
         landmark: selected landmark (may be None).
         match_status: MATCHED / POI_ONLY / VISION_ONLY / None.
         environment_desc: Vision environment description.
+        distance_from_start: for distance fallback.
+        next_dp_distance: distance to next DP (for fallback text).
 
     Returns:
-        Landmark reference string, or None if no landmark available.
+        Landmark reference string for embedding in guidance templates.
     """
     if landmark is None or match_status is None:
-        return None
+        if next_dp_distance is not None:
+            return f"{int(next_dp_distance)}m 앞"
+        return f"{int(distance_from_start)}m 앞"
 
     name = landmark.poi.place_name
 
@@ -162,7 +236,7 @@ def _landmark_with_env(
         return name
     elif match_status == "POI_ONLY":
         if environment_desc:
-            return f"{environment_desc}의 {name}"
+            return f"{environment_desc} {name}"
         return name
     elif match_status == "VISION_ONLY":
         if environment_desc:
@@ -193,7 +267,6 @@ def _position_text(landmark: ScoredPoi | None) -> str:
 def _generate_departure(
     turn_type: int | None,
     action: str | None,
-    origin_name: str | None = None,
     **kwargs,
 ) -> Guidance:
     """Generate DEPARTURE guidance.
@@ -201,18 +274,11 @@ def _generate_departure(
     Args:
         turn_type: Tmap turnType.
         action: next DP's action (not this DP's).
-        origin_name: name of departure location.
 
     Returns:
-        Guidance with conversational departure text.
+        Guidance with fixed departure text.
     """
-    if origin_name:
-        primary = (
-            f"현재 위치는 {origin_name} 근처예요. "
-            f"출발할게요! 앞쪽으로 쭉 직진하세요."
-        )
-    else:
-        primary = "출발할게요! 앞쪽으로 쭉 직진하세요."
+    primary = "안내를 시작합니다. 직진하세요."
     return Guidance(primary=primary, pre_alert=None, action=None)
 
 
@@ -229,9 +295,9 @@ def _generate_arrival(
         Guidance with arrival text.
     """
     if dest_name:
-        primary = f"목적지 {dest_name}에 도착했습니다! 안내를 종료합니다."
+        primary = f"목적지 {dest_name}에 도착했습니다."
     else:
-        primary = "목적지에 도착했습니다! 안내를 종료합니다."
+        primary = "목적지에 도착했습니다."
     return Guidance(primary=primary, pre_alert=None, action=None)
 
 
@@ -244,6 +310,7 @@ def _generate_direction_change(
     prev_landmark_name: str | None,
     distance_from_start: float,
     next_dp_distance: float | None,
+    tmap_description: str | None = None,
 ) -> Guidance:
     """Generate DIRECTION_CHANGE guidance (3-step pattern).
 
@@ -256,41 +323,42 @@ def _generate_direction_change(
         prev_landmark_name: previous DP's landmark name.
         distance_from_start: distance from route start.
         next_dp_distance: distance to next DP.
+        tmap_description: original Tmap description for fallback.
 
     Returns:
         Guidance with primary and pre_alert.
     """
     action_text = _get_action_text(action)
-    direction_text = DIRECTION_TEXT.get(action or "", "앞쪽")
-    lm_text = _landmark_with_env(landmark, match_status, environment_desc)
+    lm_text = _landmark_with_env(
+        landmark, match_status, environment_desc,
+        distance_from_start, next_dp_distance,
+    )
 
     # primary
-    if lm_text is not None:
-        if match_status == "POI_ONLY" and environment_desc:
-            primary = f"{environment_desc}의 {landmark.poi.place_name}에서 {action_text}하세요."
-        elif match_status == "VISION_ONLY" and environment_desc:
-            primary = f"{environment_desc}에서 {action_text}하세요."
-        else:
-            # MATCHED or fallback
-            primary = f"{_particle(lm_text, '을', '를')} 끼고 {action_text}하세요."
+    if landmark is not None and match_status is not None:
+        primary = f"{lm_text}에서 {action_text}하세요."
     else:
-        primary = f"여기서 {action_text}하세요."
+        # Fallback: use Tmap road/place name if available
+        tmap_name = _convert_tmap_description(tmap_description)
+        if tmap_name:
+            primary = f"{tmap_name}에서 {action_text}하세요."
+        else:
+            primary = f"여기서 {action_text}하세요."
 
     # pre_alert
-    if lm_text is not None:
+    if landmark is not None and match_status is not None:
         lm_with_particle = _particle(lm_text, "이", "가")
         if prev_landmark_name:
-            pre_alert = (
-                f"{prev_landmark_name} 지나서 조금만 더 가면 "
-                f"{lm_with_particle} 보일 거예요."
-            )
+            pre_alert = f"{prev_landmark_name} 지나면 곧 {lm_with_particle} 보여요."
         else:
-            pre_alert = f"곧 {direction_text}에 {lm_with_particle} 보일 거예요."
+            pre_alert = (
+                f"조금 있으면 {lm_with_particle} 보여요. {action_text} 준비하세요."
+            )
     else:
-        pre_alert = (
-            f"조금만 더 가면 {direction_text}으로 꺾는 곳이 나와요. "
-            f"준비해 주세요."
-        )
+        if next_dp_distance is not None:
+            pre_alert = f"{int(next_dp_distance)}m 앞에서 {action_text} 준비하세요."
+        else:
+            pre_alert = f"{action_text} 준비하세요."
 
     return Guidance(primary=primary, pre_alert=pre_alert, action=action)
 
@@ -307,6 +375,7 @@ def _generate_crosswalk(
     after_landmark: ScoredPoi | None = None,
     after_match_status: str | None = None,
     after_environment_desc: str | None = None,
+    tmap_description: str | None = None,
 ) -> Guidance:
     """Generate CROSSWALK guidance (before + after crossing).
 
@@ -322,34 +391,44 @@ def _generate_crosswalk(
         after_landmark: after-crossing landmark.
         after_match_status: after-crossing match_status.
         after_environment_desc: after-crossing environment desc.
+        tmap_description: original Tmap description for fallback.
 
     Returns:
         Guidance with primary and pre_alert.
     """
-    # facility visibility fallback — use no-landmark versions
+    # facility visibility fallback
     if facility_visible is False:
-        pre_alert = "전방에 횡단보도가 있어요. 건널 준비를 하세요."
-        primary = "횡단보도를 건너서 쭉 직진하세요."
+        dist = int(next_dp_distance) if next_dp_distance else int(distance_from_start)
+        primary = f"{dist}m 앞에서 횡단보도를 건너세요."
+        pre_alert = f"{dist}m 앞에 횡단보도가 있어요."
         return Guidance(primary=primary, pre_alert=pre_alert, action=action)
 
     # before-crossing text for pre_alert
-    before_text = _landmark_with_env(landmark, match_status, environment_desc)
+    before_text = _landmark_with_env(
+        landmark, match_status, environment_desc,
+        distance_from_start, next_dp_distance,
+    )
 
-    if before_text is not None:
-        pre_alert = f"{before_text} 앞에 횡단보도가 있어요. 건널 준비를 하세요."
+    if landmark is not None and match_status is not None:
+        pre_alert = f"{before_text} 앞 횡단보도가 있어요."
     else:
-        pre_alert = "전방에 횡단보도가 있어요. 건널 준비를 하세요."
+        pre_alert = "전방에 횡단보도가 있어요."
 
     # after-crossing text for primary
     after_text = _landmark_with_env(
         after_landmark, after_match_status, after_environment_desc,
+        distance_from_start, next_dp_distance,
     )
 
-    if after_text is not None:
-        after_with_particle = _particle(after_text, "이", "가")
-        primary = f"횡단보도를 건너면 {after_with_particle} 보여요. 그쪽으로 쭉 직진하세요."
+    if after_landmark is not None and after_match_status is not None:
+        primary = f"횡단보도를 건너 {after_text} 방향으로 직진하세요."
     else:
-        primary = "횡단보도를 건너서 쭉 직진하세요."
+        # Fallback: use Tmap place/road name if available
+        tmap_name = _convert_tmap_description(tmap_description)
+        if tmap_name:
+            primary = f"횡단보도를 건너 {tmap_name} 방향으로 직진하세요."
+        else:
+            primary = "횡단보도를 건너 직진하세요."
 
     return Guidance(primary=primary, pre_alert=pre_alert, action=action)
 
@@ -383,10 +462,11 @@ def _generate_vertical_move(
     facility_type = FACILITY_TURN_TYPES.get(turn_type or 0, "")
     facility_korean = FACILITY_KOREAN_NAMES.get(facility_type, "시설물")
 
-    # facility not visible -> conversational fallback
+    # facility not visible → distance fallback
     if facility_visible is False:
+        dist = int(next_dp_distance) if next_dp_distance else int(distance_from_start)
         facility_with_particle = _particle(facility_korean, "이", "가")
-        primary = f"조금만 더 가면 {facility_with_particle} 나와요. {facility_action}"
+        primary = f"{dist}m 앞에 {facility_with_particle} 있어요. {facility_action}"
         return Guidance(primary=primary, pre_alert=None, action=action)
 
     # poi_location_text based on match_status
@@ -395,28 +475,28 @@ def _generate_vertical_move(
         name = landmark.poi.place_name
 
         if match_status == "MATCHED":
-            facility_with_particle = _particle(facility_korean, "이", "가")
-            primary = f"{pos_text} {name} 지나면 바로 {facility_with_particle} 나와요. {facility_action}"
+            poi_loc = f"{pos_text} {name} 지나면 바로"
         elif match_status == "POI_ONLY":
             if environment_desc:
-                facility_with_particle = _particle(facility_korean, "이", "가")
-                primary = f"{pos_text} {environment_desc}의 {name} 지나면 바로 {facility_with_particle} 나와요. {facility_action}"
+                poi_loc = f"{pos_text} {environment_desc} {name} 지나면 바로"
             else:
-                facility_with_particle = _particle(facility_korean, "이", "가")
-                primary = f"{pos_text} {name} 지나면 바로 {facility_with_particle} 나와요. {facility_action}"
+                poi_loc = f"{pos_text} {name} 지나면 바로"
         elif match_status == "VISION_ONLY":
             if environment_desc:
-                facility_with_particle = _particle(facility_korean, "이", "가")
-                primary = f"{environment_desc} 끝나는 지점에 {facility_with_particle} 있어요. {facility_action}"
+                poi_loc = f"{environment_desc} 끝나는 지점에"
             else:
-                facility_with_particle = _particle(facility_korean, "이", "가")
-                primary = f"전방에 {facility_with_particle} 있어요. {facility_action}"
+                poi_loc = "전방에"
         else:
-            facility_with_particle = _particle(facility_korean, "이", "가")
-            primary = f"전방에 {facility_with_particle} 있어요. {facility_action}"
+            poi_loc = "전방에"
     else:
+        poi_loc = "전방에"
+
+    # When no POI and no env, add facility name for clarity
+    if poi_loc == "전방에" and landmark is None:
         facility_with_particle = _particle(facility_korean, "이", "가")
         primary = f"전방에 {facility_with_particle} 있어요. {facility_action}"
+    else:
+        primary = f"{poi_loc} {facility_action}"
 
     return Guidance(primary=primary, pre_alert=None, action=action)
 
@@ -442,25 +522,21 @@ def _generate_virtual(
     """
     if landmark is None or match_status is None:
         return Guidance(
-            primary="잘 가고 있어요! 그대로 쭉 직진하세요.",
+            primary="직진하세요. 잘 가고 있어요.",
             pre_alert=None,
             action=None,
         )
 
     pos_text = _position_text(landmark)
-    lm_text = _landmark_with_env(landmark, match_status, environment_desc)
-    if lm_text is None:
-        return Guidance(
-            primary="잘 가고 있어요! 그대로 쭉 직진하세요.",
-            pre_alert=None,
-            action=None,
-        )
-
+    lm_text = _landmark_with_env(
+        landmark, match_status, environment_desc,
+        distance_from_start, next_dp_distance,
+    )
     lm_with_particle = _particle(lm_text, "이", "가")
 
     primary = (
-        f"{pos_text} {lm_with_particle} 보이면 잘 가고 있는 거예요! "
-        f"그대로 쭉 직진하세요."
+        f"{pos_text} {lm_with_particle} 보이면 잘 가고 있는 거예요. "
+        f"계속 직진하세요."
     )
     return Guidance(primary=primary, pre_alert=None, action=None)
 
@@ -485,7 +561,7 @@ def generate_guidance(
     after_landmark: ScoredPoi | None = None,
     after_match_status: str | None = None,
     after_environment_desc: str | None = None,
-    origin_name: str | None = None,
+    tmap_description: str | None = None,
 ) -> Guidance:
     """Generate guidance text for a single DP.
 
@@ -504,7 +580,7 @@ def generate_guidance(
         after_landmark: After-crossing landmark (for CROSSWALK).
         after_match_status: After-crossing match_status (for CROSSWALK).
         after_environment_desc: After-crossing env desc (for CROSSWALK).
-        origin_name: Origin location name (for DEPARTURE).
+        tmap_description: Original Tmap description (fallback for no-POI DPs).
 
     Returns:
         Guidance with primary, pre_alert, and action fields.
@@ -512,7 +588,7 @@ def generate_guidance(
     action = TURN_TYPE_TO_ACTION.get(turn_type, None) if turn_type else None
 
     if dp_type == "DEPARTURE":
-        return _generate_departure(turn_type, next_action, origin_name=origin_name)
+        return _generate_departure(turn_type, next_action)
 
     if dp_type == "ARRIVAL":
         return _generate_arrival(dest_name)
@@ -522,6 +598,7 @@ def generate_guidance(
             turn_type, action, selected_landmark, match_status,
             environment_desc, prev_landmark_name,
             distance_from_start, next_dp_distance,
+            tmap_description=tmap_description,
         )
 
     if dp_type == "CROSSWALK":
@@ -530,6 +607,7 @@ def generate_guidance(
             environment_desc, facility_visible,
             distance_from_start, next_dp_distance,
             after_landmark, after_match_status, after_environment_desc,
+            tmap_description=tmap_description,
         )
 
     if dp_type == "VERTICAL_MOVE":
@@ -559,7 +637,6 @@ def generate_all_guidance(
     after_landmarks: list[ScoredPoi | None] | None = None,
     after_match_statuses: list[str | None] | None = None,
     after_environment_descs: list[str | None] | None = None,
-    origin_name: str | None = None,
 ) -> list[Guidance]:
     """Generate guidance for all DPs in sequence.
 
@@ -576,7 +653,6 @@ def generate_all_guidance(
         after_landmarks: crosswalk after-crossing landmarks (one per DP, None for non-crosswalk).
         after_match_statuses: crosswalk after-crossing match_statuses.
         after_environment_descs: crosswalk after-crossing environment descriptions.
-        origin_name: origin location name (for DEPARTURE DP).
 
     Returns:
         List of Guidance, one per DP.
@@ -619,7 +695,6 @@ def generate_all_guidance(
             after_landmark=_after_landmarks[i],
             after_match_status=_after_match_statuses[i],
             after_environment_desc=_after_environment_descs[i],
-            origin_name=origin_name if dp.dp_type == "DEPARTURE" else None,
         )
 
         results.append(guidance)
