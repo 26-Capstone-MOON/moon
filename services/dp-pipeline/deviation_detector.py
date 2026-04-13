@@ -74,6 +74,7 @@ class DeviationDetector:
                 dist = point_to_linestring_distance(
                     gps.lat, gps.lng, self._route
                 )
+                print(f"[SPEED-FILTER] speed={speed:.1f}km/h > {SPEED_THRESHOLD_KMH}km/h → GPS error, keeping state={self._state}, dist={dist:.1f}")
                 return DeviationResult(
                     state=self._state,
                     distance_to_route_m=dist,

@@ -1093,6 +1093,7 @@ def deviation_check(request: DeviationCheckRequest) -> ApiResponse:
         timestamp=request.epoch_timestamp(),
     )
     result = detector.update(gps)
+    print(f"[DEV-DEBUG] state={result.state}, dist={result.distance_to_route_m:.1f}, gps_error={result.gps_error}, msg={result.message}")
 
     route = _route_cache.get(request.route_id)
 
