@@ -128,7 +128,11 @@ function getRouteCoordinates(lineString: any): Location[] {
 export default function NavigationScreen({ navigation, route }: Props) {
   const { departure, destination, dpList: paramDpList } = route.params;
   const storeDpList = useRouteStore(s => s.decisionPoints) ?? [];
-  const dpList = storeDpList.length > 0 ? storeDpList : (paramDpList?.length > 0 ? paramDpList : MOCK_ROUTE_RESPONSE.decisionPoints);
+  const dpList = useMemo(() => {
+    if (storeDpList.length > 0) { return storeDpList; }
+    if (paramDpList?.length > 0) { return paramDpList; }
+    return MOCK_ROUTE_RESPONSE.decisionPoints;
+  }, [storeDpList, paramDpList]);
 
   const routeData = useRouteStore(s => s.routeData);
   const setRouteData = useRouteStore(s => s.setRouteData);
@@ -147,17 +151,40 @@ export default function NavigationScreen({ navigation, route }: Props) {
   const [panoReady, setPanoReady] = useState(false);
   const [panoEnabled, _setPanoEnabled] = useState(true);
   const [ttsEnabled, setTtsEnabled] = useState(true);
+  const [isFollowing, setIsFollowing] = useState(true);
+  const followTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const showError = useCallback((msg: string) => {
     setToastMessage(msg);
     setToastVisible(true);
   }, []);
 
+  // When user touches/zooms the map, pause camera following for 5 seconds
+  const handleCameraChanged = useCallback((params: { reason: string }) => {
+    if (params.reason === 'Gesture' || params.reason === 'Control') {
+      setIsFollowing(false);
+      if (followTimerRef.current) { clearTimeout(followTimerRef.current); }
+      followTimerRef.current = setTimeout(() => setIsFollowing(true), 5000);
+    }
+  }, []);
+
+  const handleRecenter = useCallback(() => {
+    if (followTimerRef.current) { clearTimeout(followTimerRef.current); }
+    setIsFollowing(true);
+  }, []);
+
   // WebSocket connection
   const handleWsMessage = useCallback((data: unknown) => {
-    const camelData = toCamelCase(data) as Parameters<typeof updateFromTracking>[0];
-    console.log('[WS] 수신:', JSON.stringify(camelData).substring(0, 300));
-    console.log('[WS] trigger:', camelData.trigger, '/ guidance:', JSON.stringify(camelData.guidance));
+    // Unwrap {status, data} wrapper if present (Python ApiResponse envelope)
+    let payload: any = data;
+    if (payload && typeof payload === 'object' && 'status' in payload && 'data' in payload) {
+      console.log('[WS] ApiResponse 래퍼 감지 → data 필드 추출');
+      payload = (payload as any).data;
+    }
+    const camelData = toCamelCase(payload) as Parameters<typeof updateFromTracking>[0];
+    console.log('[WS] trigger:', camelData.trigger, '/ state:', camelData.navigationState,
+      '/ dpDist:', camelData.distanceToDp?.toFixed?.(1),
+      '/ guidance:', camelData.guidance?.primary?.substring(0, 30));
     updateFromTracking(camelData);
   }, [updateFromTracking]);
 
@@ -248,6 +275,14 @@ export default function NavigationScreen({ navigation, route }: Props) {
       return;
     }
     if (lastSpokenTrigger.current === trigger) { return; }
+
+    // 재라우팅 중에는 DP 안내 트리거 무시 (이탈/재라우팅 안내만 허용)
+    if (isRerouting && (trigger === 'PRE_ALERT' || trigger === 'ARRIVAL' || trigger === 'CONFIRMATION')) {
+      console.log('[TTS] 재라우팅 중 DP 안내 무시:', trigger);
+      return;
+    }
+
+    console.log('[TTS] trigger 감지:', trigger, '/ guidance:', JSON.stringify(guidance));
     let text: string | null = null;
     switch (trigger) {
       case 'PRE_ALERT':
@@ -257,7 +292,7 @@ export default function NavigationScreen({ navigation, route }: Props) {
         text = guidance?.primary ?? null;
         break;
       case 'CONFIRMATION':
-        text = '잘 가고 있어요';
+        text = guidance?.primary ?? '잘 가고 있어요';
         break;
       case 'DEVIATION_WARNING':
         text = '경로를 벗어난 것 같아요';
@@ -271,12 +306,13 @@ export default function NavigationScreen({ navigation, route }: Props) {
     }
     if (text) {
       lastSpokenTrigger.current = trigger;
+      console.log('[TTS] 재생:', text);
       if (ttsEnabled) {
         ttsStop();
         ttsSpeak(text);
       }
     }
-  }, [trigger, guidance, ttsEnabled]);
+  }, [trigger, guidance, ttsEnabled, isRerouting]);
 
   // Sync localIndex from server's currentDpId
   const serverDpId = useNavigationStore(s => s.currentDpId);
@@ -455,8 +491,12 @@ export default function NavigationScreen({ navigation, route }: Props) {
   }
 
   // Map camera center on GPS position (fallback to current DP)
+  // Only applied when isFollowing is true (paused when user pans/zooms)
   const cameraLat = position?.latitude ?? currentDP.location.latitude;
   const cameraLng = position?.longitude ?? currentDP.location.longitude;
+  const cameraProps = isFollowing ? {
+    camera: { latitude: cameraLat, longitude: cameraLng, zoom: 16 },
+  } : {};
 
   return (
     <GestureHandlerRootView style={styles.root}>
@@ -490,11 +530,8 @@ export default function NavigationScreen({ navigation, route }: Props) {
               visible={navigationState === 'DEVIATION_WARNING'}
             />
             <MapView
-              camera={{
-                latitude: cameraLat,
-                longitude: cameraLng,
-                zoom: 16,
-              }}
+              {...cameraProps}
+              onCameraChanged={handleCameraChanged}
               mapPadding={{ bottom: Math.round(SCREEN_HEIGHT * SNAP_MIN) + 16, top: 0, left: 0, right: 0 }}>
               <RoutePolyline
                 coordinates={lineCoords}
@@ -508,6 +545,13 @@ export default function NavigationScreen({ navigation, route }: Props) {
                 longitude={position?.longitude ?? currentDP.location.longitude}
               />
             </MapView>
+
+            {/* Re-center button — shown when user pans/zooms away */}
+            {!isFollowing && (
+              <TouchableOpacity style={styles.recenterBtn} onPress={handleRecenter}>
+                <Icon name="locate" size={22} color={COLORS.primary} />
+              </TouchableOpacity>
+            )}
 
             {/* Mock DP controls overlay */}
             <View style={styles.mockOverlay}>
@@ -767,6 +811,22 @@ const styles = StyleSheet.create({
   mapContainer: {
     flex: 1,
     minHeight: 200,
+  },
+  recenterBtn: {
+    position: 'absolute',
+    bottom: 60,
+    right: 12,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 3,
   },
   mockOverlay: {
     position: 'absolute',

@@ -97,6 +97,41 @@ def calculate_speed_kmh(
     return dist_m / dt * 3.6
 
 
+def project_distance_on_linestring(
+    plat: float, plon: float,
+    coords: list[tuple[float, float]],
+) -> float:
+    """Return cumulative distance (meters) along the linestring to the closest projection of point P.
+
+    Finds the segment closest to P, projects P onto that segment,
+    then returns the accumulated distance from the start of the linestring
+    to that projection point.
+    """
+    if len(coords) < 2:
+        return 0.0
+
+    best_seg = 0
+    best_t = 0.0
+    best_dist = float("inf")
+    accumulated: list[float] = [0.0]
+
+    for i in range(len(coords) - 1):
+        seg_len = haversine(coords[i][0], coords[i][1], coords[i + 1][0], coords[i + 1][1])
+        accumulated.append(accumulated[-1] + seg_len)
+
+        t = _project_onto_segment(plat, plon, coords[i][0], coords[i][1], coords[i + 1][0], coords[i + 1][1])
+        proj_lat = coords[i][0] + t * (coords[i + 1][0] - coords[i][0])
+        proj_lon = coords[i][1] + t * (coords[i + 1][1] - coords[i][1])
+        d = haversine(plat, plon, proj_lat, proj_lon)
+        if d < best_dist:
+            best_dist = d
+            best_seg = i
+            best_t = t
+
+    seg_len = accumulated[best_seg + 1] - accumulated[best_seg]
+    return accumulated[best_seg] + best_t * seg_len
+
+
 def interpolate_linestring(
     coords: list[tuple[float, float]],
     interval: float,
