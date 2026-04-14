@@ -31,117 +31,126 @@ DEMO_ROUTE_DEST   = (37.4955, 127.0331)   # 역삼1동주민센터
 _MATCH_THRESHOLD_M = 100.0  # origin/dest must be within 100m to apply mock
 
 # ---------------------------------------------------------------------------
-# Mock guidance data — 14 DPs in order
-# Each entry: (dp_type, primary, pre_alert, action)
+# Mock guidance data — 15 DPs in order
+# Pipeline produces 13 DPs. 2 VIRTUAL DPs are inserted at index 1 and 12.
+# Each entry: (dp_type, landmark_name, primary, pre_alert, action)
 #   dp_type is for reference/logging only; matching is purely by order.
 # ---------------------------------------------------------------------------
 
 MOCK_GUIDANCES: list[dict] = [
-    # DP0: DEPARTURE
+    # DP0: DEPARTURE (pipeline 1)
     {
         "dp_type": "DEPARTURE",
         "landmark_name": None,
-        "primary": "서일체육문화센터에서 출발합니다. 왼쪽에 학교 운동장 울타리가 보여요. 울타리를 따라 쭉 직진하세요.",
+        "primary": "서일체육문화센터에서 출발합니다.",
         "pre_alert": None,
         "action": None,
     },
-    # DP1: CROSSWALK
+    # DP1: VIRTUAL — 삽입 (DEPARTURE와 첫 CROSSWALK 사이)
+    {
+        "dp_type": "VIRTUAL",
+        "landmark_name": "서일중학교",
+        "primary": "왼쪽에 서일중학교가 있습니다. 횡단보도가 나올 때까지 직진하세요.",
+        "pre_alert": None,
+        "action": None,
+    },
+    # DP2: CROSSWALK (pipeline 2)
     {
         "dp_type": "CROSSWALK",
-        "landmark_name": "장꼬방",
-        "primary": "사거리 횡단보도를 건너세요. 오른쪽에 빨간 벽돌 건물 장꼬방이 보여요. 서초초등학교 방향으로 직진하세요.",
-        "pre_alert": "전방에 사거리 횡단보도가 있어요. 오른쪽에 장꼬방 빨간 건물이 보여요.",
+        "landmark_name": "서초초등학교",
+        "primary": "서초초등학교 방면으로 횡단보도를 건너세요. 다음 횡단보도가 나올 때까지 직진하세요.",
+        "pre_alert": "곧 횡단보도가 나와요.",
         "action": "CROSSWALK",
     },
-    # DP2: CROSSWALK
+    # DP3: CROSSWALK (pipeline 3)
     {
         "dp_type": "CROSSWALK",
-        "landmark_name": "IBK기업은행 강남역점",
-        "primary": "IBK기업은행 강남역점 앞 횡단보도를 건너세요. 건너면 오른쪽에 벽화가 그려진 담장이 보여요. 그 방향으로 직진하세요.",
-        "pre_alert": "전방에 횡단보도가 있어요. 왼쪽에 IBK기업은행이 보여요.",
+        "landmark_name": "IBK기업은행 강남역",
+        "primary": "IBK기업은행 강남역점 방면으로 횡단보도를 건너세요. 건너서 계속 직진하세요.",
+        "pre_alert": "곧 다음 횡단보도가 나와요.",
         "action": "CROSSWALK",
     },
-    # DP3: DIRECTION_CHANGE (left turn)
+    # DP4: DIRECTION_CHANGE (pipeline 4)
     {
         "dp_type": "DIRECTION_CHANGE",
-        "landmark_name": "SPAO",
-        "primary": "오른쪽에 SPAO 매장이 보이면 좌회전하세요. 큰 도로가 나와요.",
-        "pre_alert": "조금 있으면 오른쪽에 SPAO 간판이 보여요. 좌회전 준비하세요.",
+        "landmark_name": "스파오 강남2호점",
+        "primary": "좌회전하면 왼쪽에 스파오 강남2호점이 보여요.",
+        "pre_alert": "큰 도로가 보여요. 좌회전을 준비하세요.",
         "action": "LEFT_TURN",
     },
-    # DP4: CROSSWALK
+    # DP5: CROSSWALK (pipeline 5)
     {
         "dp_type": "CROSSWALK",
-        "landmark_name": "MUJI",
-        "primary": "MUJI 매장 앞 횡단보도를 건너세요. 왼쪽에 파고다타워가 보여요.",
-        "pre_alert": "전방에 횡단보도가 있어요. 왼쪽에 MUJI 빨간 간판이 보여요.",
+        "landmark_name": "MUJI 강남점",
+        "primary": "MUJI 강남점 매장 앞 횡단보도를 건너세요.",
+        "pre_alert": "곧 횡단보도가 나와요.",
         "action": "CROSSWALK",
     },
-    # DP5: DIRECTION_CHANGE (right turn)
+    # DP6: DIRECTION_CHANGE (pipeline 6)
     {
         "dp_type": "DIRECTION_CHANGE",
         "landmark_name": "조앤조의원",
-        "primary": "조앤조의원 앞 횡단보도를 건너세요. 건너서 쭉 직진하세요.",
-        "pre_alert": "전방에 횡단보도가 있어요. 왼쪽에 조앤조의원 파란 간판이 보여요.",
+        "primary": "조앤조의원 앞에서 우회전하세요. 강남역 11번 출구까지 계속 직진하세요.",
+        "pre_alert": "앞쪽에 조앤조의원이 보여요. 우회전을 준비하세요.",
         "action": "RIGHT_TURN",
     },
-    # DP6: DIRECTION_CHANGE (left turn)
+    # DP7: DIRECTION_CHANGE (pipeline 7)
     {
         "dp_type": "DIRECTION_CHANGE",
         "landmark_name": "KB국민은행 강남중앙점",
-        "primary": "강남역 11번 출구 옆 KB국민은행 강남중앙점에서 좌회전하세요.",
-        "pre_alert": "조금 있으면 왼쪽에 KB국민은행이 보여요. 좌회전 준비하세요.",
+        "primary": "KB국민은행 강남중앙점을 끼고 좌회전하세요. 횡단보도까지 계속 직진하세요.",
+        "pre_alert": "강남역 11번 출구 지나면 곧 왼쪽에 국민은행이 보여요. 좌회전을 준비하세요.",
         "action": "LEFT_TURN",
     },
-    # DP7: CROSSWALK
+    # DP8: CROSSWALK (pipeline 8)
     {
         "dp_type": "CROSSWALK",
         "landmark_name": "GS25 강남타운점",
-        "primary": "GS25 강남타운점 앞 횡단보도를 건너세요. 건너면 오른쪽에 공차 빨간 간판이 보여요. 그 방향으로 직진하세요.",
-        "pre_alert": "전방에 횡단보도가 있어요. 오른쪽에 GS25 파란 간판이 보여요.",
+        "primary": "GS25 강남타운점 방면으로 횡단보도를 건너세요. 건너서 KB손해보험까지 직진하세요.",
+        "pre_alert": "곧 횡단보도가 나와요.",
         "action": "CROSSWALK",
     },
-    # DP8: CROSSWALK
+    # DP9: CROSSWALK (pipeline 9)
     {
         "dp_type": "CROSSWALK",
         "landmark_name": "KB손해보험 강남사옥",
-        "primary": "국기원입구 사거리 횡단보도를 건너세요. 왼쪽에 KB손해보험 강남사옥 유리 건물이 보여요.",
-        "pre_alert": "전방에 국기원입구 사거리가 있어요. 횡단보도를 건널 준비하세요.",
+        "primary": "KB손해보험 강남사옥 앞에 있는 횡단보도를 건너세요.",
+        "pre_alert": "곧 횡단보도가 나와요.",
         "action": "CROSSWALK",
     },
-    # DP9: CROSSWALK
+    # DP10: CROSSWALK (pipeline 10)
     {
         "dp_type": "CROSSWALK",
-        "landmark_name": "KT플라자",
-        "primary": "횡단보도를 건너세요. 오른쪽에 KT플라자 건물이 보여요. 그 방향으로 직진하세요.",
-        "pre_alert": "전방에 횡단보도가 있어요. 오른쪽에 KT플라자가 보여요.",
+        "landmark_name": None,
+        "primary": "왼쪽에 있는 횡단보도를 건너세요. 건너서 계속 직진하세요.",
+        "pre_alert": "곧 횡단보도가 나와요.",
         "action": "CROSSWALK",
     },
-    # DP10: DIRECTION_CHANGE (right turn)
+    # DP11: DIRECTION_CHANGE (pipeline 11)
     {
         "dp_type": "DIRECTION_CHANGE",
-        "landmark_name": "우리은행 삼원아케이드",
-        "primary": "오른쪽에 우리은행 간판과 삼원아케이드 아치형 입구가 보이면 우회전하세요.",
-        "pre_alert": "조금 있으면 오른쪽에 우리은행 파란 간판이 보여요. 우회전 준비하세요.",
+        "landmark_name": "우리은행 테헤란로금융센터",
+        "primary": "우리은행 테헤란로금융센터에서 우회전하세요. 뚜레쥬르 카페 역삼점까지 계속 직진하세요.",
+        "pre_alert": "곧 앞쪽에 우리은행 테헤란로금융센터가 보여요.",
         "action": "RIGHT_TURN",
     },
-    # DP11: VIRTUAL (confirmation — inserted between pipeline DP10 and DP11)
+    # DP12: VIRTUAL — 삽입 (DIRECTION_CHANGE 우회전과 DIRECTION_CHANGE 좌회전 사이)
     {
         "dp_type": "VIRTUAL",
-        "landmark_name": "뚜레쥬르",
-        "primary": "왼쪽에 뚜레쥬르가 보이면 잘 가고 있는 거예요. 계속 직진하세요.",
+        "landmark_name": "뚜레쥬르 카페역삼점",
+        "primary": "왼쪽에 뚜레쥬르 카페 역삼점이 보이면 잘 가고 있는 거예요. 역삼1동주민센터 주차장까지 계속 직진하세요.",
         "pre_alert": None,
         "action": None,
     },
-    # DP12: DIRECTION_CHANGE (left turn)
+    # DP13: DIRECTION_CHANGE (pipeline 12)
     {
         "dp_type": "DIRECTION_CHANGE",
-        "landmark_name": "역삼1동주민센터",
-        "primary": "왼쪽에 역삼1동주민센터 유리 건물이 보이면 좌회전하세요.",
-        "pre_alert": "뚜레쥬르 지나면 곧 왼쪽에 역삼1동주민센터가 보여요. 좌회전 준비하세요.",
-        "action": "LEFT_TURN",
+        "landmark_name": "역삼1동주민센터 공영주차장",
+        "primary": "왼쪽에 역삼1동주민센터 공영주차장이 보이면 좌회전하세요.",
+        "pre_alert": "곧 왼쪽에 역삼1동주민센터 공영주차장이 보여요. 좌회전을 준비하세요.",
+        "action": None,
     },
-    # DP13: ARRIVAL
+    # DP14: ARRIVAL (pipeline 13)
     {
         "dp_type": "ARRIVAL",
         "landmark_name": None,
@@ -149,6 +158,21 @@ MOCK_GUIDANCES: list[dict] = [
         "pre_alert": None,
         "action": None,
     },
+]
+
+# ---------------------------------------------------------------------------
+# VIRTUAL DP insertion indices (0-based positions in MOCK_GUIDANCES)
+# These are the mock indices that need a VIRTUAL DP inserted into the
+# pipeline DP list. Maps mock_index → (before_pipeline_index, after_pipeline_index)
+# ---------------------------------------------------------------------------
+
+_VIRTUAL_INSERT_SPECS: list[dict] = [
+    # DP1 (VIRTUAL 서일중학교): between pipeline DP0 (DEPARTURE) and DP1 (first CROSSWALK)
+    {"mock_index": 1, "before_pipeline": 0, "after_pipeline": 1,
+     "fixed_lat": 37.498272, "fixed_lng": 127.022654},
+    # DP12 (VIRTUAL 뚜레쥬르): between pipeline DP10 (DIRECTION_CHANGE 우회전) and DP11 (DIRECTION_CHANGE 좌회전)
+    {"mock_index": 12, "before_pipeline": 10, "after_pipeline": 11,
+     "fixed_lat": 37.497535, "fixed_lng": 127.031905},
 ]
 
 
@@ -163,9 +187,9 @@ def apply_mock_guidance(
 ) -> RouteResponse:
     """Overwrite guidance with hand-crafted demo text if route matches.
 
-    Only the ``guidance`` field of each DP is replaced. Coordinates,
-    distance_from_start, selected_landmark, panorama_request, etc. are
-    preserved from the real pipeline.
+    Pipeline produces 13 DPs. Mock has 15 entries (13 real + 2 VIRTUAL).
+    This function inserts VIRTUAL DPs at index 1 and 12, then overwrites
+    all guidance with mock data.
 
     Returns the (possibly mutated) RouteResponse.
     """
@@ -176,24 +200,26 @@ def apply_mock_guidance(
     dps = route_response.decision_points
     n_pipeline = len(dps)
     n_mock = len(MOCK_GUIDANCES)
+    n_virtual = sum(1 for m in MOCK_GUIDANCES if m["dp_type"] == "VIRTUAL")
+    n_real_mock = n_mock - n_virtual  # non-VIRTUAL mock entries
 
     logger.info(
-        "[MOCK] Demo route matched! Pipeline DPs=%d, Mock entries=%d",
-        n_pipeline, n_mock,
+        "[MOCK] Demo route matched! Pipeline DPs=%d, Mock entries=%d (real=%d, virtual=%d)",
+        n_pipeline, n_mock, n_real_mock, n_virtual,
     )
 
-    # Simple case: same count → 1:1 overwrite
+    # Expected: pipeline produces n_real_mock DPs, we insert n_virtual to reach n_mock
+    if n_pipeline == n_real_mock:
+        _insert_virtual_dps(route_response)
+        _overwrite_guidance(route_response.decision_points, MOCK_GUIDANCES)
+        return route_response
+
+    # Pipeline already has the same count as mock (all VIRTUALs already present)
     if n_pipeline == n_mock:
         _overwrite_guidance(dps, MOCK_GUIDANCES)
         return route_response
 
-    # Pipeline produced fewer DPs than mock entries → try inserting virtual DP
-    if n_pipeline == n_mock - 1:
-        _insert_virtual_dp(route_response)
-        _overwrite_guidance(route_response.decision_points, MOCK_GUIDANCES)
-        return route_response
-
-    # Fallback: overwrite as many as we can (min of both)
+    # Fallback: overwrite as many as we can
     count = min(n_pipeline, n_mock)
     logger.warning(
         "[MOCK] DP count mismatch (pipeline=%d, mock=%d). "
@@ -253,36 +279,57 @@ def _overwrite_guidance(
         )
 
 
-def _insert_virtual_dp(route_response: RouteResponse) -> None:
-    """Insert a VIRTUAL DP between the 11th and 12th pipeline DP.
+def _insert_virtual_dps(route_response: RouteResponse) -> None:
+    """Insert VIRTUAL DPs at predefined positions between pipeline DPs.
 
-    The virtual DP location is the midpoint between DP[10] and DP[11]
-    on the route LineString.
+    Inserts are done in reverse order (highest index first) so that earlier
+    indices remain valid after each insertion.
+
+    Coordinates: midpoint of surrounding DPs, unless fixed_lat/fixed_lng specified.
+    distance_from_start: always interpolated from surrounding DPs.
     """
     dps = route_response.decision_points
-    if len(dps) < 12:
-        logger.warning("[MOCK] Not enough DPs to insert virtual DP")
-        return
 
-    dp_before = dps[10]  # pipeline DP10 (0-indexed)
-    dp_after = dps[11]   # pipeline DP11
+    # Sort specs by before_pipeline descending so insertions don't shift indices
+    specs = sorted(_VIRTUAL_INSERT_SPECS, key=lambda s: s["before_pipeline"], reverse=True)
 
-    # Midpoint between the two DPs
-    mid_lat = (dp_before.location.latitude + dp_after.location.latitude) / 2
-    mid_lng = (dp_before.location.longitude + dp_after.location.longitude) / 2
-    mid_dist = (dp_before.distance_from_start + dp_after.distance_from_start) / 2
+    for spec in specs:
+        before_idx = spec["before_pipeline"]
+        after_idx = spec["after_pipeline"]
+        mock_idx = spec["mock_index"]
 
-    virtual_dp = DecisionPoint(
-        dp_id=f"dp-virtual-mock-{uuid.uuid4().hex[:6]}",
-        dp_type="VIRTUAL",
-        turn_type=None,
-        location=Location(latitude=mid_lat, longitude=mid_lng),
-        distance_from_start=mid_dist,
-        guidance=Guidance(primary="", pre_alert=None, action=None),  # overwritten later
-    )
+        if before_idx >= len(dps) or after_idx >= len(dps):
+            logger.warning(
+                "[MOCK] Cannot insert VIRTUAL at mock_index=%d: "
+                "pipeline has only %d DPs (need indices %d and %d)",
+                mock_idx, len(dps), before_idx, after_idx,
+            )
+            continue
 
-    dps.insert(11, virtual_dp)
-    logger.info(
-        "[MOCK] Inserted VIRTUAL DP at index 11 (lat=%.4f, lng=%.4f, dist=%.0fm)",
-        mid_lat, mid_lng, mid_dist,
-    )
+        dp_before = dps[before_idx]
+        dp_after = dps[after_idx]
+
+        # Use hardcoded coordinates if specified, otherwise midpoint
+        vdp_lat = spec.get("fixed_lat")
+        vdp_lng = spec.get("fixed_lng")
+        if vdp_lat is None or vdp_lng is None:
+            vdp_lat = (dp_before.location.latitude + dp_after.location.latitude) / 2
+            vdp_lng = (dp_before.location.longitude + dp_after.location.longitude) / 2
+
+        mid_dist = (dp_before.distance_from_start + dp_after.distance_from_start) / 2
+
+        virtual_dp = DecisionPoint(
+            dp_id=f"dp-virtual-mock-{uuid.uuid4().hex[:6]}",
+            dp_type="VIRTUAL",
+            turn_type=None,
+            location=Location(latitude=vdp_lat, longitude=vdp_lng),
+            distance_from_start=mid_dist,
+            guidance=Guidance(primary="", pre_alert=None, action=None),
+        )
+
+        insert_pos = after_idx  # insert before the "after" DP
+        dps.insert(insert_pos, virtual_dp)
+        logger.info(
+            "[MOCK] Inserted VIRTUAL DP at index %d (mock_index=%d, lat=%.6f, lng=%.6f, dist=%.0fm)",
+            insert_pos, mock_idx, vdp_lat, vdp_lng, mid_dist,
+        )
