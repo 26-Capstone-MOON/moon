@@ -105,6 +105,7 @@ export const MOCK_ROUTE_RESPONSE: RouteData = {
           { pan: -45, label: 'LEFT', isPrimary: false },
           { pan: 135, label: 'RIGHT', isPrimary: false },
         ],
+        panOverride: null,
       },
     },
     {
@@ -126,6 +127,7 @@ export const MOCK_ROUTE_RESPONSE: RouteData = {
         score: 1.19,
         matchStatus: 'POI_ONLY',
         isOpen: true,
+        location: null,
       },
       panoramaRequest: {
         location: { latitude: 37.5696, longitude: 126.9844 },
@@ -134,6 +136,7 @@ export const MOCK_ROUTE_RESPONSE: RouteData = {
           { pan: -30, label: 'LEFT', isPrimary: false },
           { pan: 150, label: 'RIGHT', isPrimary: true },
         ],
+        panOverride: null,
       },
     },
     {
@@ -155,12 +158,14 @@ export const MOCK_ROUTE_RESPONSE: RouteData = {
         score: 1.98,
         matchStatus: 'MATCHED',
         isOpen: true,
+        location: null,
       },
       panoramaRequest: {
         location: { latitude: 37.5705, longitude: 126.9860 },
         directions: [
           { pan: 30, label: 'FRONT', isPrimary: true },
         ],
+        panOverride: null,
       },
     },
     {
@@ -182,6 +187,7 @@ export const MOCK_ROUTE_RESPONSE: RouteData = {
         score: 1.05,
         matchStatus: 'POI_ONLY',
         isOpen: true,
+        location: null,
       },
       panoramaRequest: {
         location: { latitude: 37.5718, longitude: 126.9875 },
@@ -190,6 +196,7 @@ export const MOCK_ROUTE_RESPONSE: RouteData = {
           { pan: -70, label: 'LEFT', isPrimary: false },
           { pan: 110, label: 'RIGHT', isPrimary: false },
         ],
+        panOverride: null,
       },
     },
     {
@@ -211,6 +218,7 @@ export const MOCK_ROUTE_RESPONSE: RouteData = {
         score: 0.95,
         matchStatus: 'POI_ONLY',
         isOpen: true,
+        location: null,
       },
       panoramaRequest: {
         location: { latitude: 37.5728, longitude: 126.9888 },
@@ -219,6 +227,7 @@ export const MOCK_ROUTE_RESPONSE: RouteData = {
           { pan: -75, label: 'LEFT', isPrimary: false },
           { pan: 105, label: 'RIGHT', isPrimary: false },
         ],
+        panOverride: null,
       },
     },
     {
@@ -240,6 +249,7 @@ export const MOCK_ROUTE_RESPONSE: RouteData = {
         score: 1.45,
         matchStatus: 'MATCHED',
         isOpen: true,
+        location: null,
       },
       panoramaRequest: {
         location: { latitude: 37.5735, longitude: 126.9895 },
@@ -248,6 +258,7 @@ export const MOCK_ROUTE_RESPONSE: RouteData = {
           { pan: 260, label: 'LEFT', isPrimary: true },
           { pan: 80, label: 'RIGHT', isPrimary: false },
         ],
+        panOverride: null,
       },
     },
     {
@@ -269,6 +280,7 @@ export const MOCK_ROUTE_RESPONSE: RouteData = {
         score: 1.80,
         matchStatus: 'MATCHED',
         isOpen: true,
+        location: null,
       },
       panoramaRequest: {
         location: { latitude: 37.5742, longitude: 126.9902 },
@@ -277,6 +289,7 @@ export const MOCK_ROUTE_RESPONSE: RouteData = {
           { pan: 250, label: 'LEFT', isPrimary: false },
           { pan: 70, label: 'RIGHT', isPrimary: false },
         ],
+        panOverride: null,
       },
     },
   ],

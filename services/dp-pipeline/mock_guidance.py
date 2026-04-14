@@ -15,6 +15,8 @@ from schemas import (
     DecisionPoint,
     Guidance,
     Location,
+    PanoramaDirection,
+    PanoramaRequest,
     RouteResponse,
     SelectedLandmark,
 )
@@ -41,7 +43,10 @@ MOCK_GUIDANCES: list[dict] = [
     # DP0: DEPARTURE (pipeline 1)
     {
         "dp_type": "DEPARTURE",
-        "landmark_name": None,
+        "landmark_name": "서일체육문화센터",
+        "landmark_lat": 37.498366,
+        "landmark_lng": 127.022103,
+        "pan_override": -23.4,
         "primary": "서일체육문화센터에서 출발합니다.",
         "pre_alert": None,
         "action": None,
@@ -50,6 +55,9 @@ MOCK_GUIDANCES: list[dict] = [
     {
         "dp_type": "VIRTUAL",
         "landmark_name": "서일중학교",
+        "landmark_lat": 37.499217,
+        "landmark_lng": 127.022318,
+        "pan_override": -4.8,
         "primary": "왼쪽에 서일중학교가 있습니다. 횡단보도가 나올 때까지 직진하세요.",
         "pre_alert": None,
         "action": None,
@@ -58,6 +66,9 @@ MOCK_GUIDANCES: list[dict] = [
     {
         "dp_type": "CROSSWALK",
         "landmark_name": "서초초등학교",
+        "landmark_lat": 37.499077,
+        "landmark_lng": 127.024011,
+        "pan_override": 70.4,
         "primary": "서초초등학교 방면으로 횡단보도를 건너세요. 다음 횡단보도가 나올 때까지 직진하세요.",
         "pre_alert": "곧 횡단보도가 나와요.",
         "action": "CROSSWALK",
@@ -66,6 +77,9 @@ MOCK_GUIDANCES: list[dict] = [
     {
         "dp_type": "CROSSWALK",
         "landmark_name": "IBK기업은행 강남역",
+        "landmark_lat": 37.499314,
+        "landmark_lng": 127.025770,
+        "pan_override": 326.6,
         "primary": "IBK기업은행 강남역점 방면으로 횡단보도를 건너세요. 건너서 계속 직진하세요.",
         "pre_alert": "곧 다음 횡단보도가 나와요.",
         "action": "CROSSWALK",
@@ -74,6 +88,9 @@ MOCK_GUIDANCES: list[dict] = [
     {
         "dp_type": "DIRECTION_CHANGE",
         "landmark_name": "스파오 강남2호점",
+        "landmark_lat": 37.499578,
+        "landmark_lng": 127.026409,
+        "pan_override": 306.3,
         "primary": "좌회전하면 왼쪽에 스파오 강남2호점이 보여요.",
         "pre_alert": "큰 도로가 보여요. 좌회전을 준비하세요.",
         "action": "LEFT_TURN",
@@ -82,6 +99,9 @@ MOCK_GUIDANCES: list[dict] = [
     {
         "dp_type": "CROSSWALK",
         "landmark_name": "MUJI 강남점",
+        "landmark_lat": 37.499775,
+        "landmark_lng": 127.026311,
+        "pan_override": -495.8,
         "primary": "MUJI 강남점 매장 앞 횡단보도를 건너세요.",
         "pre_alert": "곧 횡단보도가 나와요.",
         "action": "CROSSWALK",
@@ -90,6 +110,9 @@ MOCK_GUIDANCES: list[dict] = [
     {
         "dp_type": "DIRECTION_CHANGE",
         "landmark_name": "조앤조의원",
+        "landmark_lat": 37.500113,
+        "landmark_lng": 127.027112,
+        "pan_override": 70.3,
         "primary": "조앤조의원 앞에서 우회전하세요. 강남역 11번 출구까지 계속 직진하세요.",
         "pre_alert": "앞쪽에 조앤조의원이 보여요. 우회전을 준비하세요.",
         "action": "RIGHT_TURN",
@@ -98,6 +121,9 @@ MOCK_GUIDANCES: list[dict] = [
     {
         "dp_type": "DIRECTION_CHANGE",
         "landmark_name": "KB국민은행 강남중앙점",
+        "landmark_lat": 37.498737,
+        "landmark_lng": 127.027766,
+        "pan_override": 395.0,
         "primary": "KB국민은행 강남중앙점을 끼고 좌회전하세요. 횡단보도까지 계속 직진하세요.",
         "pre_alert": "강남역 11번 출구 지나면 곧 왼쪽에 국민은행이 보여요. 좌회전을 준비하세요.",
         "action": "LEFT_TURN",
@@ -106,6 +132,9 @@ MOCK_GUIDANCES: list[dict] = [
     {
         "dp_type": "CROSSWALK",
         "landmark_name": "GS25 강남타운점",
+        "landmark_lat": 37.498982,
+        "landmark_lng": 127.029850,
+        "pan_override": 25.0,
         "primary": "GS25 강남타운점 방면으로 횡단보도를 건너세요. 건너서 KB손해보험까지 직진하세요.",
         "pre_alert": "곧 횡단보도가 나와요.",
         "action": "CROSSWALK",
@@ -114,6 +143,9 @@ MOCK_GUIDANCES: list[dict] = [
     {
         "dp_type": "CROSSWALK",
         "landmark_name": "KB손해보험 강남사옥",
+        "landmark_lat": 37.499156,
+        "landmark_lng": 127.030356,
+        "pan_override": 300.7,
         "primary": "KB손해보험 강남사옥 앞에 있는 횡단보도를 건너세요.",
         "pre_alert": "곧 횡단보도가 나와요.",
         "action": "CROSSWALK",
@@ -121,7 +153,10 @@ MOCK_GUIDANCES: list[dict] = [
     # DP10: CROSSWALK (pipeline 10)
     {
         "dp_type": "CROSSWALK",
-        "landmark_name": None,
+        "landmark_name": "KT플라자 강남역점",
+        "landmark_lat": 37.498704,
+        "landmark_lng": 127.030915,
+        "pan_override": 167.4,
         "primary": "왼쪽에 있는 횡단보도를 건너세요. 건너서 계속 직진하세요.",
         "pre_alert": "곧 횡단보도가 나와요.",
         "action": "CROSSWALK",
@@ -130,6 +165,9 @@ MOCK_GUIDANCES: list[dict] = [
     {
         "dp_type": "DIRECTION_CHANGE",
         "landmark_name": "우리은행 테헤란로금융센터",
+        "landmark_lat": 37.498746,
+        "landmark_lng": 127.031325,
+        "pan_override": 111.7,
         "primary": "우리은행 테헤란로금융센터에서 우회전하세요. 뚜레쥬르 카페 역삼점까지 계속 직진하세요.",
         "pre_alert": "곧 앞쪽에 우리은행 테헤란로금융센터가 보여요.",
         "action": "RIGHT_TURN",
@@ -138,6 +176,9 @@ MOCK_GUIDANCES: list[dict] = [
     {
         "dp_type": "VIRTUAL",
         "landmark_name": "뚜레쥬르 카페역삼점",
+        "landmark_lat": 37.497535,
+        "landmark_lng": 127.031905,
+        "pan_override": 52.1,
         "primary": "왼쪽에 뚜레쥬르 카페 역삼점이 보이면 잘 가고 있는 거예요. 역삼1동주민센터 주차장까지 계속 직진하세요.",
         "pre_alert": None,
         "action": None,
@@ -146,6 +187,9 @@ MOCK_GUIDANCES: list[dict] = [
     {
         "dp_type": "DIRECTION_CHANGE",
         "landmark_name": "역삼1동주민센터 공영주차장",
+        "landmark_lat": 37.495522,
+        "landmark_lng": 127.032983,
+        "pan_override": -286.8,
         "primary": "왼쪽에 역삼1동주민센터 공영주차장이 보이면 좌회전하세요.",
         "pre_alert": "곧 왼쪽에 역삼1동주민센터 공영주차장이 보여요. 좌회전을 준비하세요.",
         "action": None,
@@ -153,7 +197,10 @@ MOCK_GUIDANCES: list[dict] = [
     # DP14: ARRIVAL (pipeline 13)
     {
         "dp_type": "ARRIVAL",
-        "landmark_name": None,
+        "landmark_name": "역삼1동주민센터",
+        "landmark_lat": 37.495448,
+        "landmark_lng": 127.033017,
+        "pan_override": None,
         "primary": "목적지 역삼1동주민센터에 도착했습니다.",
         "pre_alert": None,
         "action": None,
@@ -262,6 +309,9 @@ def _overwrite_guidance(
         )
         lm_name = mock.get("landmark_name")
         if lm_name:
+            lm_lat = mock.get("landmark_lat")
+            lm_lng = mock.get("landmark_lng")
+            lm_location = Location(latitude=lm_lat, longitude=lm_lng) if lm_lat and lm_lng else None
             dps[i].selected_landmark = SelectedLandmark(
                 name=lm_name,
                 category_code="MOCK",
@@ -270,12 +320,19 @@ def _overwrite_guidance(
                 score=1.0,
                 match_status="POI_ONLY",
                 is_open=True,
+                location=lm_location,
             )
         else:
             dps[i].selected_landmark = None
+        # Apply pan_override to panoramaRequest
+        pan_val = mock.get("pan_override")
+        if pan_val is not None and dps[i].panorama_request is not None:
+            dps[i].panorama_request.pan_override = pan_val
         logger.info(
-            "[MOCK] DP%d (%s) landmark=%s → %s",
-            i, dps[i].dp_type, lm_name or "null", mock["primary"][:40],
+            "[MOCK] DP%d (%s) landmark=%s pan_override=%s → %s",
+            i, dps[i].dp_type, lm_name or "null",
+            pan_val if pan_val is not None else "none",
+            mock["primary"][:40],
         )
 
 
@@ -325,6 +382,10 @@ def _insert_virtual_dps(route_response: RouteResponse) -> None:
             location=Location(latitude=vdp_lat, longitude=vdp_lng),
             distance_from_start=mid_dist,
             guidance=Guidance(primary="", pre_alert=None, action=None),
+            panorama_request=PanoramaRequest(
+                location=Location(latitude=vdp_lat, longitude=vdp_lng),
+                directions=[PanoramaDirection(pan=0.0, label="FRONT", is_primary=True)],
+            ),
         )
 
         insert_pos = after_idx  # insert before the "after" DP

@@ -55,7 +55,25 @@ const PANO_HEIGHT_MAX = 260;
 
 const NCP_CLIENT_ID = 'p1w5pdggbh';
 
-function buildPanoramaHtml(lat: number, lng: number, pan: number): string {
+function buildPanoramaHtml(
+  lat: number, lng: number, pan: number,
+  landmarkName?: string | null,
+  landmarkLat?: number | null, landmarkLng?: number | null,
+): string {
+  const markerJs = (landmarkName && landmarkLat != null && landmarkLng != null) ? `
+var markerPos=new naver.maps.LatLng(${landmarkLat},${landmarkLng});
+var marker=new naver.maps.Marker({
+  position:markerPos,
+  map:pano,
+  icon:{
+    content:'<div style="display:flex;flex-direction:column;align-items:center;pointer-events:none">'
+      +'<div style="background:#f2d202;color:#000;font-size:11px;font-weight:700;padding:3px 8px;border-radius:12px;box-shadow:0 2px 6px rgba(0,0,0,0.35);white-space:nowrap;max-width:160px;overflow:hidden;text-overflow:ellipsis">${landmarkName.replace(/'/g, "\\'")}</div>'
+      +'<div style="width:0;height:0;border-left:6px solid transparent;border-right:6px solid transparent;border-top:7px solid #f2d202"></div>'
+      +'<div style="width:7px;height:7px;border-radius:50%;background:#f2d202;margin-top:1px;box-shadow:0 1px 3px rgba(0,0,0,0.3)"></div>'
+      +'</div>',
+    anchor:new naver.maps.Point(0,60)
+  }
+});` : '';
   return `<!DOCTYPE html>
 <html><head>
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
@@ -65,24 +83,73 @@ function buildPanoramaHtml(lat: number, lng: number, pan: number): string {
 <div id="pano"></div>
 <script>
 var pos=new naver.maps.LatLng(${lat},${lng});
+var targetPan=${pan};
 var pano=new naver.maps.Panorama('pano',{
   position:pos,
-  pov:{pan:${pan},tilt:0,fov:100},
+  pov:{pan:targetPan,tilt:0,fov:100},
   flightSpot:false,
   aroundControl:true,
   zoomControl:false
 });
+naver.maps.Event.addListener(pano,'init',function(){
+  pano.setPov({pan:targetPan,tilt:0,fov:100});
+  window.ReactNativeWebView.postMessage(JSON.stringify({type:'pov_init',pan:targetPan}));
+});
+naver.maps.Event.addListener(pano,'pano_changed',function(){
+  pano.setPov({pan:targetPan,tilt:0,fov:100});
+  window.ReactNativeWebView.postMessage(JSON.stringify({type:'pov_reset',pan:targetPan}));
+});
 naver.maps.Event.addListener(pano,'error',function(){
   document.getElementById('pano').innerHTML='<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#999;font-size:13px">파노라마 없음</div>';
 });
+naver.maps.Event.addListener(pano,'pov_changed',function(){
+  var pov=pano.getPov();
+  window.ReactNativeWebView.postMessage(JSON.stringify({type:'pov',pan:pov.pan}));
+});
+${markerJs}
 </script>
 </body></html>`;
+}
+
+/** Bearing (degrees 0-360) from point A to point B. */
+function bearingTo(
+  lat1: number, lng1: number,
+  lat2: number, lng2: number,
+): number {
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const toDeg = (r: number) => (r * 180) / Math.PI;
+  const φ1 = toRad(lat1);
+  const φ2 = toRad(lat2);
+  const dλ = toRad(lng2 - lng1);
+  const y = Math.sin(dλ) * Math.cos(φ2);
+  const x = Math.cos(φ1) * Math.sin(φ2) - Math.sin(φ1) * Math.cos(φ2) * Math.cos(dλ);
+  return (toDeg(Math.atan2(y, x)) + 360) % 360;
 }
 
 function getPrimaryPan(dp: DecisionPoint): number | null {
   if (!dp.panoramaRequest?.directions) { return null; }
   const primary = dp.panoramaRequest.directions.find(d => d.isPrimary);
-  return primary ? primary.pan : null;
+  if (!primary) { return null; }
+
+  // Priority 1: server-supplied panOverride (hand-tuned value)
+  const override = dp.panoramaRequest.panOverride;
+  if (override != null) {
+    console.log(`[PANO] dpId=${dp.dpId}, panOverride=${override}, originalPan=${primary.pan}`);
+    return override;
+  }
+
+  // Priority 2: bearing toward POI location
+  const lmLoc = dp.selectedLandmark?.location;
+  if (lmLoc) {
+    const panoLoc = dp.panoramaRequest.location;
+    const bearing = bearingTo(panoLoc.latitude, panoLoc.longitude, lmLoc.latitude, lmLoc.longitude);
+    console.log(`[PANO] dpId=${dp.dpId}, bearing=${bearing.toFixed(1)}, originalPan=${primary.pan}`);
+    return bearing;
+  }
+
+  // Priority 3: default pan from panoramaRequest
+  console.log(`[PANO] dpId=${dp.dpId}, defaultPan=${primary.pan}`);
+  return primary.pan;
 }
 
 function getDpIcon(dpType: string): string {
@@ -271,16 +338,17 @@ export default function NavigationScreen({ navigation, route }: Props) {
     }
   }, [localIndex, currentDP, isNavigating]);
 
-  // TTS: announce first DP on navigation start
+  // TTS: announce first DP on navigation start (only when WebSocket not connected)
   const hasSpokenInitial = useRef(false);
   useEffect(() => {
     if (hasSpokenInitial.current || !ttsEnabled || !currentDP) { return; }
+    if (connectionState === 'CONNECTED') { return; } // server handles TTS via trigger
     const text = currentDP.guidance?.primary;
     if (text) {
       ttsSpeak(text);
       hasSpokenInitial.current = true;
     }
-  }, [currentDP, ttsEnabled]);
+  }, [currentDP, ttsEnabled, connectionState]);
 
   // TTS on trigger change (deduplicated by trigger + dpId)
   const guidance = useNavigationStore(s => s.guidance);
@@ -581,6 +649,9 @@ export default function NavigationScreen({ navigation, route }: Props) {
                           currentDP.panoramaRequest!.location.latitude,
                           currentDP.panoramaRequest!.location.longitude,
                           getPrimaryPan(currentDP)!,
+                          currentDP.selectedLandmark?.name ?? null,
+                          currentDP.selectedLandmark?.location?.latitude ?? null,
+                          currentDP.selectedLandmark?.location?.longitude ?? null,
                         ),
                       }}
                       style={styles.panoramaImage}
@@ -592,6 +663,18 @@ export default function NavigationScreen({ navigation, route }: Props) {
                       cacheEnabled={false}
                       incognito={true}
                       androidLayerType="software"
+                      onMessage={(e) => {
+                        try {
+                          const msg = JSON.parse(e.nativeEvent.data);
+                          if (msg.type === 'pov_init') {
+                            console.log(`[PANO] init: setPov pan=${msg.pan}`);
+                          } else if (msg.type === 'pov_reset') {
+                            console.log(`[PANO] pano_changed: re-setPov pan=${msg.pan}`);
+                          } else if (msg.type === 'pov') {
+                            console.log(`[PANO] moved: pan=${Number(msg.pan).toFixed(1)}`);
+                          }
+                        } catch {}
+                      }}
                     />
                   </Reanimated.View>
                 ) : (

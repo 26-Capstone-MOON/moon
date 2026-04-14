@@ -27,6 +27,7 @@ export interface SelectedLandmark {
   score: number;
   matchStatus: 'MATCHED' | 'POI_ONLY' | 'VISION_ONLY';
   isOpen: boolean;
+  location: Location | null;
 }
 
 export interface PanoramaDirection {
@@ -38,6 +39,7 @@ export interface PanoramaDirection {
 export interface PanoramaRequest {
   location: Location;
   directions: PanoramaDirection[];
+  panOverride: number | null;
 }
 
 export interface DecisionPoint {

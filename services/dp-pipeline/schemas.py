@@ -66,6 +66,7 @@ class PanoramaDirection(BaseModel):
 class PanoramaRequest(BaseModel):
     location: Location
     directions: list[PanoramaDirection]
+    pan_override: Optional[float] = None
 
 
 # ---------------------------------------------------------------------------
