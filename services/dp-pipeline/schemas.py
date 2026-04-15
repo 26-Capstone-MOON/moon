@@ -36,6 +36,8 @@ class Guidance(BaseModel):
     primary: str
     pre_alert: Optional[str] = None
     action: Optional[str] = None  # GuidanceAction enum value
+    primary_audio: Optional[str] = None  # base64-encoded mp3 for primary guidance
+    pre_alert_audio: Optional[str] = None  # base64-encoded mp3 for pre_alert guidance
 
 
 # ---------------------------------------------------------------------------
@@ -66,6 +68,7 @@ class PanoramaDirection(BaseModel):
 class PanoramaRequest(BaseModel):
     location: Location
     directions: list[PanoramaDirection]
+    pan_override: Optional[float] = None
 
 
 # ---------------------------------------------------------------------------

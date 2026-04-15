@@ -37,6 +37,7 @@ import { toCamelCase } from '../utils/caseConverter';
 import type { RootStackParamList } from '../types/navigation';
 import { formatTime } from '../utils/formatTime';
 import { formatDistance } from '../utils/formatDistance';
+import { buildPanoramaHtml, getPrimaryPan } from '../utils/panoramaUtils';
 import type { DecisionPoint, Location } from '../types/route';
 
 type Props = StackScreenProps<RootStackParamList, 'Navigation'>;
@@ -52,38 +53,6 @@ const SNAP_MAX = 0.90;  // 90%
 // Panorama height range (driven by bottom sheet position)
 const PANO_HEIGHT_MIN = 200;
 const PANO_HEIGHT_MAX = 260;
-
-const NCP_CLIENT_ID = 'p1w5pdggbh';
-
-function buildPanoramaHtml(lat: number, lng: number, pan: number): string {
-  return `<!DOCTYPE html>
-<html><head>
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
-<script src="https://oapi.map.naver.com/openapi/v3/maps.js?ncpClientId=${NCP_CLIENT_ID}&submodules=panorama"></script>
-<style>*{margin:0;padding:0}html,body,#pano{width:100%;height:100%;overflow:hidden}</style>
-</head><body>
-<div id="pano"></div>
-<script>
-var pos=new naver.maps.LatLng(${lat},${lng});
-var pano=new naver.maps.Panorama('pano',{
-  position:pos,
-  pov:{pan:${pan},tilt:0,fov:100},
-  flightSpot:false,
-  aroundControl:true,
-  zoomControl:false
-});
-naver.maps.Event.addListener(pano,'error',function(){
-  document.getElementById('pano').innerHTML='<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#999;font-size:13px">파노라마 없음</div>';
-});
-</script>
-</body></html>`;
-}
-
-function getPrimaryPan(dp: DecisionPoint): number | null {
-  if (!dp.panoramaRequest?.directions) { return null; }
-  const primary = dp.panoramaRequest.directions.find(d => d.isPrimary);
-  return primary ? primary.pan : null;
-}
 
 function getDpIcon(dpType: string): string {
   switch (dpType) {
@@ -138,6 +107,8 @@ export default function NavigationScreen({ navigation, route }: Props) {
   const setRouteData = useRouteStore(s => s.setRouteData);
   const { currentDpIndex, setCurrentDp, navigationState, trigger } = useNavigationStore();
   const updateFromTracking = useNavigationStore(s => s.updateFromTracking);
+  const guidance = useNavigationStore(s => s.guidance);
+  const currentDpId = useNavigationStore(s => s.currentDpId);
   const isFocused = useIsFocused();
 
   // GPS tracking
@@ -271,20 +242,23 @@ export default function NavigationScreen({ navigation, route }: Props) {
     }
   }, [localIndex, currentDP, isNavigating]);
 
-  // TTS: announce first DP on navigation start
-  const hasSpokenInitial = useRef(false);
+  // Mock 모드: 출발지 DP일 때 store에 ARRIVAL trigger 주입 → trigger-based TTS가 처리
+  const hasFiredDeparture = useRef(false);
   useEffect(() => {
-    if (hasSpokenInitial.current || !ttsEnabled || !currentDP) { return; }
-    const text = currentDP.guidance?.primary;
-    if (text) {
-      ttsSpeak(text);
-      hasSpokenInitial.current = true;
-    }
-  }, [currentDP, ttsEnabled]);
+    if (hasFiredDeparture.current) { return; }
+    if (connectionState === 'CONNECTED') { return; }
+    if (!currentDP || currentDP.dpType !== 'DEPARTURE' || localIndex !== 0) { return; }
+    hasFiredDeparture.current = true;
+    useNavigationStore.getState().setTrigger('ARRIVAL');
+    useNavigationStore.getState().setGuidance({
+      primary: currentDP.guidance?.primary ?? '',
+      preAlert: currentDP.guidance?.preAlert ?? null,
+      action: currentDP.guidance?.action ?? null,
+      primaryAudio: currentDP.guidance?.primaryAudio ?? null,
+    });
+  }, [currentDP, connectionState, localIndex]);
 
   // TTS on trigger change (deduplicated by trigger + dpId)
-  const guidance = useNavigationStore(s => s.guidance);
-  const currentDpId = useNavigationStore(s => s.currentDpId);
   const lastSpokenKey = useRef<string | null>(null);
   useEffect(() => {
     if (!trigger) {
@@ -300,17 +274,21 @@ export default function NavigationScreen({ navigation, route }: Props) {
       return;
     }
 
-    console.log('[TTS] trigger 감지:', trigger, '/ dpId:', currentDpId, '/ guidance:', JSON.stringify(guidance));
+    console.log('[TTS] trigger 감지:', trigger, '/ dpId:', currentDpId);
     let text: string | null = null;
+    let audio: string | null = null;
     switch (trigger) {
       case 'PRE_ALERT':
         text = guidance?.preAlert ?? guidance?.primary ?? null;
+        audio = guidance?.preAlertAudio ?? guidance?.primaryAudio ?? null;
         break;
       case 'ARRIVAL':
         text = guidance?.primary ?? null;
+        audio = guidance?.primaryAudio ?? null;
         break;
       case 'CONFIRMATION':
         text = guidance?.primary ?? '잘 가고 있어요';
+        audio = guidance?.primaryAudio ?? null;
         break;
       case 'DEVIATION_WARNING':
         text = '경로를 벗어난 것 같아요';
@@ -324,10 +302,10 @@ export default function NavigationScreen({ navigation, route }: Props) {
     }
     if (text) {
       lastSpokenKey.current = spokenKey;
-      console.log('[TTS] 재생:', text);
+      console.log('[TTS] 재생:', text, audio ? '(Google TTS)' : '(device TTS)');
       if (ttsEnabled) {
         ttsStop();
-        ttsSpeak(text);
+        ttsSpeak(text, audio);
       }
     }
   }, [trigger, guidance, currentDpId, ttsEnabled, isRerouting]);
@@ -572,6 +550,7 @@ export default function NavigationScreen({ navigation, route }: Props) {
             <BottomSheetScrollView style={styles.sheetContent} showsVerticalScrollIndicator={false}>
               {/* Panorama */}
               <View style={styles.panoramaSection}>
+                {(() => { if (currentDP) { console.log('[NAV] pan:', currentDP.dpId, getPrimaryPan(currentDP)); } return null; })()}
                 {panoEnabled && panoReady && currentDP && getPrimaryPan(currentDP) !== null ? (
                   <Reanimated.View style={[styles.panoramaPlaceholder, panoramaAnimStyle]}>
                     <WebView
@@ -581,6 +560,9 @@ export default function NavigationScreen({ navigation, route }: Props) {
                           currentDP.panoramaRequest!.location.latitude,
                           currentDP.panoramaRequest!.location.longitude,
                           getPrimaryPan(currentDP)!,
+                          currentDP.selectedLandmark?.name ?? null,
+                          currentDP.selectedLandmark?.location?.latitude ?? null,
+                          currentDP.selectedLandmark?.location?.longitude ?? null,
                         ),
                       }}
                       style={styles.panoramaImage}
@@ -592,6 +574,18 @@ export default function NavigationScreen({ navigation, route }: Props) {
                       cacheEnabled={false}
                       incognito={true}
                       androidLayerType="software"
+                      onMessage={(e) => {
+                        try {
+                          const msg = JSON.parse(e.nativeEvent.data);
+                          if (msg.type === 'pov_init') {
+                            console.log(`[PANO] init: setPov pan=${msg.pan}`);
+                          } else if (msg.type === 'pov_reset') {
+                            console.log(`[PANO] pano_changed: re-setPov pan=${msg.pan}`);
+                          } else if (msg.type === 'pov') {
+                            console.log(`[PANO] moved: pan=${Number(msg.pan).toFixed(1)}`);
+                          }
+                        } catch {}
+                      }}
                     />
                   </Reanimated.View>
                 ) : (

@@ -96,6 +96,8 @@ export const MOCK_ROUTE_RESPONSE: RouteData = {
         primary: '현재 위치는 세종대로 사거리 근처예요. 출발할게요! 앞쪽으로 쭉 직진하세요.',
         preAlert: null,
         action: null,
+        primaryAudio: null,
+        preAlertAudio: null,
       },
       selectedLandmark: null,
       panoramaRequest: {
@@ -105,6 +107,7 @@ export const MOCK_ROUTE_RESPONSE: RouteData = {
           { pan: -45, label: 'LEFT', isPrimary: false },
           { pan: 135, label: 'RIGHT', isPrimary: false },
         ],
+        panOverride: null,
       },
     },
     {
@@ -117,6 +120,8 @@ export const MOCK_ROUTE_RESPONSE: RouteData = {
         primary: 'GS25 광화문점을 끼고 우회전하세요.',
         preAlert: '곧 오른쪽에 GS25 광화문점이 보일 거예요.',
         action: 'RIGHT_TURN',
+        primaryAudio: null,
+        preAlertAudio: null,
       },
       selectedLandmark: {
         name: 'GS25 광화문점',
@@ -126,6 +131,7 @@ export const MOCK_ROUTE_RESPONSE: RouteData = {
         score: 1.19,
         matchStatus: 'POI_ONLY',
         isOpen: true,
+        location: null,
       },
       panoramaRequest: {
         location: { latitude: 37.5696, longitude: 126.9844 },
@@ -134,6 +140,7 @@ export const MOCK_ROUTE_RESPONSE: RouteData = {
           { pan: -30, label: 'LEFT', isPrimary: false },
           { pan: 150, label: 'RIGHT', isPrimary: true },
         ],
+        panOverride: null,
       },
     },
     {
@@ -146,6 +153,8 @@ export const MOCK_ROUTE_RESPONSE: RouteData = {
         primary: '왼쪽에 국민은행 광화문지점이 보이면 잘 가고 있는 거예요! 그대로 쭉 직진하세요.',
         preAlert: null,
         action: null,
+        primaryAudio: null,
+        preAlertAudio: null,
       },
       selectedLandmark: {
         name: '국민은행 광화문지점',
@@ -155,12 +164,14 @@ export const MOCK_ROUTE_RESPONSE: RouteData = {
         score: 1.98,
         matchStatus: 'MATCHED',
         isOpen: true,
+        location: null,
       },
       panoramaRequest: {
         location: { latitude: 37.5705, longitude: 126.9860 },
         directions: [
           { pan: 30, label: 'FRONT', isPrimary: true },
         ],
+        panOverride: null,
       },
     },
     {
@@ -173,6 +184,8 @@ export const MOCK_ROUTE_RESPONSE: RouteData = {
         primary: '횡단보도를 건너면 스타벅스가 보여요. 그쪽으로 쭉 직진하세요.',
         preAlert: '올리브영 종로점 앞에 횡단보도가 있어요. 건널 준비를 하세요.',
         action: 'CROSSWALK',
+        primaryAudio: null,
+        preAlertAudio: null,
       },
       selectedLandmark: {
         name: '올리브영 종로점',
@@ -182,6 +195,7 @@ export const MOCK_ROUTE_RESPONSE: RouteData = {
         score: 1.05,
         matchStatus: 'POI_ONLY',
         isOpen: true,
+        location: null,
       },
       panoramaRequest: {
         location: { latitude: 37.5718, longitude: 126.9875 },
@@ -190,6 +204,7 @@ export const MOCK_ROUTE_RESPONSE: RouteData = {
           { pan: -70, label: 'LEFT', isPrimary: false },
           { pan: 110, label: 'RIGHT', isPrimary: false },
         ],
+        panOverride: null,
       },
     },
     {
@@ -202,6 +217,8 @@ export const MOCK_ROUTE_RESPONSE: RouteData = {
         primary: '왼쪽에 CU 종로3가점 지나면 바로 계단이 나와요. 계단을 올라가세요.',
         preAlert: null,
         action: 'STAIRS_UP',
+        primaryAudio: null,
+        preAlertAudio: null,
       },
       selectedLandmark: {
         name: 'CU 종로3가점',
@@ -211,6 +228,7 @@ export const MOCK_ROUTE_RESPONSE: RouteData = {
         score: 0.95,
         matchStatus: 'POI_ONLY',
         isOpen: true,
+        location: null,
       },
       panoramaRequest: {
         location: { latitude: 37.5728, longitude: 126.9888 },
@@ -219,6 +237,7 @@ export const MOCK_ROUTE_RESPONSE: RouteData = {
           { pan: -75, label: 'LEFT', isPrimary: false },
           { pan: 105, label: 'RIGHT', isPrimary: false },
         ],
+        panOverride: null,
       },
     },
     {
@@ -231,6 +250,8 @@ export const MOCK_ROUTE_RESPONSE: RouteData = {
         primary: '투썸플레이스 종로점을 끼고 좌회전하세요.',
         preAlert: 'CU 종로3가점 지나서 조금만 더 가면 투썸플레이스 종로점이 보일 거예요.',
         action: 'LEFT_TURN',
+        primaryAudio: null,
+        preAlertAudio: null,
       },
       selectedLandmark: {
         name: '투썸플레이스 종로점',
@@ -240,6 +261,7 @@ export const MOCK_ROUTE_RESPONSE: RouteData = {
         score: 1.45,
         matchStatus: 'MATCHED',
         isOpen: true,
+        location: null,
       },
       panoramaRequest: {
         location: { latitude: 37.5735, longitude: 126.9895 },
@@ -248,6 +270,7 @@ export const MOCK_ROUTE_RESPONSE: RouteData = {
           { pan: 260, label: 'LEFT', isPrimary: true },
           { pan: 80, label: 'RIGHT', isPrimary: false },
         ],
+        panOverride: null,
       },
     },
     {
@@ -260,6 +283,8 @@ export const MOCK_ROUTE_RESPONSE: RouteData = {
         primary: '목적지 교보문고 광화문점에 도착했습니다! 안내를 종료합니다.',
         preAlert: null,
         action: null,
+        primaryAudio: null,
+        preAlertAudio: null,
       },
       selectedLandmark: {
         name: '교보문고 광화문점',
@@ -269,6 +294,7 @@ export const MOCK_ROUTE_RESPONSE: RouteData = {
         score: 1.80,
         matchStatus: 'MATCHED',
         isOpen: true,
+        location: null,
       },
       panoramaRequest: {
         location: { latitude: 37.5742, longitude: 126.9902 },
@@ -277,6 +303,7 @@ export const MOCK_ROUTE_RESPONSE: RouteData = {
           { pan: 250, label: 'LEFT', isPrimary: false },
           { pan: 70, label: 'RIGHT', isPrimary: false },
         ],
+        panOverride: null,
       },
     },
   ],

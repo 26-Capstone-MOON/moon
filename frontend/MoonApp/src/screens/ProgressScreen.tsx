@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   ScrollView,
   StyleSheet,
@@ -6,6 +6,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import WebView from 'react-native-webview';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/Ionicons';
 import type { StackScreenProps } from '@react-navigation/stack';
@@ -15,6 +16,7 @@ import { useRouteStore } from '../stores/useRouteStore';
 import { MOCK_ROUTE_RESPONSE } from '../mocks/mockRoute';
 import { formatDistance } from '../utils/formatDistance';
 import { formatTime } from '../utils/formatTime';
+import { buildPanoramaHtml, getPrimaryPan } from '../utils/panoramaUtils';
 import type { RootStackParamList } from '../types/navigation';
 import type { DecisionPoint } from '../types/route';
 
@@ -50,6 +52,8 @@ export default function ProgressScreen({ navigation, route }: Props) {
 
   const currentDpIndex = useNavigationStore(s => s.currentDpIndex);
   const routeData = useRouteStore(s => s.routeData);
+  const [expandedDpId, setExpandedDpId] = useState<string | null>(null);
+  const [scrollEnabled, setScrollEnabled] = useState(true);
 
   const totalDistance = routeData?.totalDistance ?? MOCK_ROUTE_RESPONSE.totalDistance;
   const totalTime = routeData?.totalTime ?? MOCK_ROUTE_RESPONSE.totalTime;
@@ -109,10 +113,14 @@ export default function ProgressScreen({ navigation, route }: Props) {
         </View>
 
         {/* Checkpoint list */}
-        <ScrollView style={styles.listScroll} contentContainerStyle={styles.listContent}>
+        <ScrollView style={styles.listScroll} contentContainerStyle={styles.listContent} scrollEnabled={scrollEnabled}>
           {dpList.map((dp: DecisionPoint, index: number) => {
             const isPassed = index < currentDpIndex;
             const isCurrent = index === currentDpIndex;
+            const isExpanded = expandedDpId === dp.dpId;
+            const pan = getPrimaryPan(dp);
+            console.log('[PROG] pan:', dp.dpId, pan);
+            const hasPanorama = dp.panoramaRequest != null && pan != null;
 
             return (
               <View key={dp.dpId} style={styles.checkpointRow}>
@@ -142,35 +150,78 @@ export default function ProgressScreen({ navigation, route }: Props) {
                 <View style={[
                   styles.checkpointCard,
                   isCurrent && styles.checkpointCardCurrent,
+                  isExpanded && styles.checkpointCardExpanded,
                 ]}>
-                  <View style={styles.checkpointHeader}>
-                    <Text style={[
-                      styles.checkpointType,
-                      isPassed && styles.textPassed,
-                      isCurrent && styles.textCurrent,
-                    ]}>
-                      {getDpLabel(dp.dpType)}
+                  <TouchableOpacity
+                    activeOpacity={0.7}
+                    onPress={() => setExpandedDpId(isExpanded ? null : dp.dpId)}>
+                    <View style={styles.checkpointHeader}>
+                      <Text style={[
+                        styles.checkpointType,
+                        isPassed && styles.textPassed,
+                        isCurrent && styles.textCurrent,
+                      ]}>
+                        {getDpLabel(dp.dpType)}
+                      </Text>
+                      {isCurrent && (
+                        <View style={styles.currentBadge}>
+                          <Text style={styles.currentBadgeText}>현재</Text>
+                        </View>
+                      )}
+                      <Icon
+                        name={isExpanded ? 'chevron-up' : 'chevron-down'}
+                        size={14}
+                        color={COLORS.subtext}
+                        style={styles.expandIcon}
+                      />
+                    </View>
+                    <Text
+                      style={[
+                        styles.checkpointGuide,
+                        isPassed && styles.textPassedGuide,
+                      ]}
+                      numberOfLines={isExpanded ? undefined : 2}>
+                      {dp.guidance?.primary}
                     </Text>
-                    {isCurrent && (
-                      <View style={styles.currentBadge}>
-                        <Text style={styles.currentBadgeText}>현재</Text>
+                    {dp.selectedLandmark && (
+                      <View style={styles.checkpointLandmark}>
+                        <Icon name="location-outline" size={11} color={COLORS.subtext} />
+                        <Text style={styles.checkpointLandmarkText}>
+                          {dp.selectedLandmark.name}
+                        </Text>
                       </View>
                     )}
-                  </View>
-                  <Text
-                    style={[
-                      styles.checkpointGuide,
-                      isPassed && styles.textPassedGuide,
-                    ]}
-                    numberOfLines={2}>
-                    {dp.guidance?.primary}
-                  </Text>
-                  {dp.selectedLandmark && (
-                    <View style={styles.checkpointLandmark}>
-                      <Icon name="location-outline" size={11} color={COLORS.subtext} />
-                      <Text style={styles.checkpointLandmarkText}>
-                        {dp.selectedLandmark.name}
-                      </Text>
+                  </TouchableOpacity>
+
+                  {/* Panorama view (expanded) */}
+                  {isExpanded && hasPanorama && (
+                    <View
+                      style={styles.panoContainer}
+                      onTouchStart={() => setScrollEnabled(false)}
+                      onTouchEnd={() => setScrollEnabled(true)}
+                      onTouchCancel={() => setScrollEnabled(true)}>
+                      <WebView
+                        key={`pano-progress-${dp.dpId}`}
+                        source={{
+                          html: buildPanoramaHtml(
+                            dp.panoramaRequest!.location.latitude,
+                            dp.panoramaRequest!.location.longitude,
+                            pan!,
+                            dp.selectedLandmark?.name ?? null,
+                            dp.selectedLandmark?.location?.latitude ?? null,
+                            dp.selectedLandmark?.location?.longitude ?? null,
+                          ),
+                        }}
+                        style={styles.panoWebView}
+                        scrollEnabled={true}
+                        nestedScrollEnabled={true}
+                        javaScriptEnabled={true}
+                        domStorageEnabled={true}
+                        originWhitelist={['*']}
+                        cacheEnabled={false}
+                        incognito={true}
+                        androidLayerType="software"
+                      />
                     </View>
                   )}
                 </View>
@@ -371,6 +422,10 @@ const styles = StyleSheet.create({
     elevation: 3,
     shadowOpacity: 0.1,
   },
+  checkpointCardExpanded: {
+    elevation: 3,
+    shadowOpacity: 0.1,
+  },
   checkpointHeader: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -417,6 +472,20 @@ const styles = StyleSheet.create({
   checkpointLandmarkText: {
     fontSize: 12,
     color: COLORS.subtext,
+  },
+  expandIcon: {
+    marginLeft: 'auto',
+  },
+  panoContainer: {
+    height: 170,
+    marginTop: 10,
+    borderRadius: 10,
+    overflow: 'hidden',
+    backgroundColor: '#F0F0F0',
+  },
+  panoWebView: {
+    flex: 1,
+    borderRadius: 10,
   },
 
   // Bottom bar

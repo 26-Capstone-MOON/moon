@@ -25,8 +25,14 @@ class Settings(BaseSettings):
     google_places_api_key: str = ""
     openweather_api_key: str = ""
     openai_api_key: str = ""
+    google_tts_api_key: str = ""
 
     model_config = {"env_file": _env_files(), "env_file_encoding": "utf-8"}
 
 
 settings = Settings()
+
+# ---------------------------------------------------------------------------
+# Mock guidance toggle — overwrite pipeline guidance with hand-crafted demo text
+# ---------------------------------------------------------------------------
+MOCK_GUIDANCE = True

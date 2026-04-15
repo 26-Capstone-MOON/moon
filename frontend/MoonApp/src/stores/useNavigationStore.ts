@@ -37,6 +37,8 @@ interface NavigationStoreState {
     primary: string;
     preAlert: string | null;
     action: string | null;
+    primaryAudio: string | null;
+    preAlertAudio: string | null;
   } | null;
 
   setCurrentDp: (index: number, dpId: string) => void;
@@ -44,13 +46,13 @@ interface NavigationStoreState {
   setTrigger: (trigger: Trigger) => void;
   setDistanceToDp: (distance: number) => void;
   setProgress: (progress: Progress) => void;
-  setGuidance: (guidance: { primary: string; preAlert: string | null; action: string | null }) => void;
+  setGuidance: (guidance: { primary: string; preAlert: string | null; action: string | null; primaryAudio?: string | null; preAlertAudio?: string | null }) => void;
   updateFromTracking: (response: {
     navigationState: NavigationState;
     currentDpId: string;
     distanceToDp: number;
     trigger: Trigger;
-    guidance: { primary: string; preAlert: string | null; action: string | null } | null;
+    guidance: { primary: string; preAlert: string | null; action: string | null; primaryAudio?: string | null; preAlertAudio?: string | null } | null;
     progress: Progress;
   }) => void;
   reset: () => void;
@@ -75,7 +77,13 @@ export const useNavigationStore = create<NavigationStoreState>((set) => ({
 
   setProgress: (progress) => set({ progress }),
 
-  setGuidance: (guidance) => set({ guidance }),
+  setGuidance: (guidance) => set({
+    guidance: {
+      ...guidance,
+      primaryAudio: guidance.primaryAudio ?? null,
+      preAlertAudio: guidance.preAlertAudio ?? null,
+    },
+  }),
 
   updateFromTracking: (response) =>
     set({
@@ -83,7 +91,11 @@ export const useNavigationStore = create<NavigationStoreState>((set) => ({
       currentDpId: response.currentDpId,
       distanceToDp: response.distanceToDp,
       trigger: response.trigger,
-      guidance: response.guidance,
+      guidance: response.guidance ? {
+        ...response.guidance,
+        primaryAudio: response.guidance.primaryAudio ?? null,
+        preAlertAudio: response.guidance.preAlertAudio ?? null,
+      } : null,
       progress: response.progress,
     }),
 
