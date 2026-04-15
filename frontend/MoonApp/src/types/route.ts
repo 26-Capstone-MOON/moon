@@ -17,6 +17,8 @@ export interface Guidance {
     | 'UNDERPASS'
     | 'ELEVATOR'
     | null;
+  primaryAudio: string | null;
+  preAlertAudio: string | null;
 }
 
 export interface SelectedLandmark {

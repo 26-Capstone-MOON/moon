@@ -51,6 +51,7 @@ from schemas import (
     SelectedLandmark,
 )
 from guidance_generator import generate_guidance
+from tts_service import synthesize, synthesize_guidance
 from scoring_service import ScoredPoi, select_landmark
 from smoke_navigation_check import build_report
 from tmap_service import request_pedestrian_route
@@ -102,6 +103,19 @@ app = FastAPI(
         "Mock endpoints stay local, and /api/smoke/tmap performs a live Tmap call."
     ),
 )
+
+
+async def _attach_tts_audio(route_response: RouteResponse) -> RouteResponse:
+    """Generate Google Cloud TTS audio for all DP guidance texts."""
+    for dp in route_response.decision_points:
+        if dp.guidance:
+            primary_audio, pre_alert_audio = await synthesize_guidance(
+                dp.guidance.primary,
+                dp.guidance.pre_alert,
+            )
+            dp.guidance.primary_audio = primary_audio
+            dp.guidance.pre_alert_audio = pre_alert_audio
+    return route_response
 
 
 def _location_tuple(location: Location) -> tuple[float, float]:
@@ -640,8 +654,10 @@ async def tmap_smoke(request: RouteRequest) -> ApiResponse:
 
 
 @app.post("/api/route/mock", response_model=ApiResponse)
-def route_mock(request: RouteRequest) -> ApiResponse:
-    return ApiResponse(data=_build_mock_route_response(request))
+async def route_mock(request: RouteRequest) -> ApiResponse:
+    route_response = _build_mock_route_response(request)
+    route_response = await _attach_tts_audio(route_response)
+    return ApiResponse(data=route_response)
 
 
 @app.post("/api/deviation/mock", response_model=ApiResponse)
@@ -983,6 +999,9 @@ async def route_create(request: RouteRequest) -> ApiResponse:
             route_response.destination,
         )
 
+    # Generate Google Cloud TTS audio for all guidance texts
+    route_response = await _attach_tts_audio(route_response)
+
     _route_cache[route_response.route_id] = route_response
     return ApiResponse(data=route_response)
 
@@ -994,6 +1013,21 @@ def route_get(route_id: str) -> ApiResponse:
     if cached is None:
         raise HTTPException(status_code=404, detail="Route not found")
     return ApiResponse(data=cached)
+
+
+# ---------------------------------------------------------------------------
+# TTS endpoint (on-demand, for deviation warnings etc.)
+# ---------------------------------------------------------------------------
+
+@app.get("/api/tts")
+async def tts_synthesize(text: str):
+    """Synthesize a single text string to mp3 audio (base64)."""
+    if not text:
+        raise HTTPException(status_code=400, detail="text parameter is required")
+    audio_b64 = await synthesize(text)
+    if audio_b64 is None:
+        raise HTTPException(status_code=502, detail="TTS synthesis failed")
+    return {"audio": audio_b64}
 
 
 # ---------------------------------------------------------------------------

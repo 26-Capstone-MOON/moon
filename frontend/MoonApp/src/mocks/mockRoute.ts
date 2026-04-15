@@ -96,6 +96,8 @@ export const MOCK_ROUTE_RESPONSE: RouteData = {
         primary: '세종대로 사거리에서 출발합니다. 종로 방면으로 직진하세요.',
         preAlert: null,
         action: null,
+        primaryAudio: null,
+        preAlertAudio: null,
       },
       selectedLandmark: null,
       panoramaRequest: {
@@ -118,6 +120,8 @@ export const MOCK_ROUTE_RESPONSE: RouteData = {
         primary: '오른쪽에 GS25 편의점 보이시죠? 그 앞에서 우회전하세요.',
         preAlert: '곧 GS25 편의점이 오른쪽에 보일 거예요. 그 앞에서 우회전 준비하세요.',
         action: 'RIGHT_TURN',
+        primaryAudio: null,
+        preAlertAudio: null,
       },
       selectedLandmark: {
         name: 'GS25 광화문점',
@@ -149,6 +153,8 @@ export const MOCK_ROUTE_RESPONSE: RouteData = {
         primary: '왼쪽에 국민은행 보이면 맞는 길이에요. 계속 직진하세요.',
         preAlert: null,
         action: null,
+        primaryAudio: null,
+        preAlertAudio: null,
       },
       selectedLandmark: {
         name: '국민은행 광화문지점',
@@ -178,6 +184,8 @@ export const MOCK_ROUTE_RESPONSE: RouteData = {
         primary: '올리브영 앞 횡단보도를 건너서, 맞은편 스타벅스 방향으로 직진하세요.',
         preAlert: '앞에 횡단보도가 있어요. 올리브영 앞에서 건너세요.',
         action: 'CROSSWALK',
+        primaryAudio: null,
+        preAlertAudio: null,
       },
       selectedLandmark: {
         name: '올리브영 종로점',
@@ -209,6 +217,8 @@ export const MOCK_ROUTE_RESPONSE: RouteData = {
         primary: '왼쪽 CU 편의점 지나면 바로 계단이 있어요. 계단으로 올라가세요.',
         preAlert: 'CU 편의점 지나면 계단이 나와요.',
         action: 'STAIRS_UP',
+        primaryAudio: null,
+        preAlertAudio: null,
       },
       selectedLandmark: {
         name: 'CU 종로3가점',
@@ -240,6 +250,8 @@ export const MOCK_ROUTE_RESPONSE: RouteData = {
         primary: '전방에 투썸플레이스가 보이면 그 건물 앞에서 좌회전하세요.',
         preAlert: '투썸플레이스가 전방에 보일 거예요. 좌회전 준비하세요.',
         action: 'LEFT_TURN',
+        primaryAudio: null,
+        preAlertAudio: null,
       },
       selectedLandmark: {
         name: '투썸플레이스 종로점',
@@ -271,6 +283,8 @@ export const MOCK_ROUTE_RESPONSE: RouteData = {
         primary: '오른쪽에 교보문고 건물이 보이면 도착이에요.',
         preAlert: null,
         action: null,
+        primaryAudio: null,
+        preAlertAudio: null,
       },
       selectedLandmark: {
         name: '교보문고 광화문점',

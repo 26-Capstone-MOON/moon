@@ -107,6 +107,8 @@ export default function NavigationScreen({ navigation, route }: Props) {
   const setRouteData = useRouteStore(s => s.setRouteData);
   const { currentDpIndex, setCurrentDp, navigationState, trigger } = useNavigationStore();
   const updateFromTracking = useNavigationStore(s => s.updateFromTracking);
+  const guidance = useNavigationStore(s => s.guidance);
+  const currentDpId = useNavigationStore(s => s.currentDpId);
   const isFocused = useIsFocused();
 
   // GPS tracking
@@ -240,21 +242,23 @@ export default function NavigationScreen({ navigation, route }: Props) {
     }
   }, [localIndex, currentDP, isNavigating]);
 
-  // TTS: announce first DP on navigation start (only when WebSocket not connected)
-  const hasSpokenInitial = useRef(false);
+  // Mock 모드: 출발지 DP일 때 store에 ARRIVAL trigger 주입 → trigger-based TTS가 처리
+  const hasFiredDeparture = useRef(false);
   useEffect(() => {
-    if (hasSpokenInitial.current || !ttsEnabled || !currentDP) { return; }
-    if (connectionState === 'CONNECTED') { return; } // server handles TTS via trigger
-    const text = currentDP.guidance?.primary;
-    if (text) {
-      ttsSpeak(text);
-      hasSpokenInitial.current = true;
-    }
-  }, [currentDP, ttsEnabled, connectionState]);
+    if (hasFiredDeparture.current) { return; }
+    if (connectionState === 'CONNECTED') { return; }
+    if (!currentDP || currentDP.dpType !== 'DEPARTURE' || localIndex !== 0) { return; }
+    hasFiredDeparture.current = true;
+    useNavigationStore.getState().setTrigger('ARRIVAL');
+    useNavigationStore.getState().setGuidance({
+      primary: currentDP.guidance?.primary ?? '',
+      preAlert: currentDP.guidance?.preAlert ?? null,
+      action: currentDP.guidance?.action ?? null,
+      primaryAudio: currentDP.guidance?.primaryAudio ?? null,
+    });
+  }, [currentDP, connectionState, localIndex]);
 
   // TTS on trigger change (deduplicated by trigger + dpId)
-  const guidance = useNavigationStore(s => s.guidance);
-  const currentDpId = useNavigationStore(s => s.currentDpId);
   const lastSpokenKey = useRef<string | null>(null);
   useEffect(() => {
     if (!trigger) {
@@ -270,17 +274,21 @@ export default function NavigationScreen({ navigation, route }: Props) {
       return;
     }
 
-    console.log('[TTS] trigger 감지:', trigger, '/ dpId:', currentDpId, '/ guidance:', JSON.stringify(guidance));
+    console.log('[TTS] trigger 감지:', trigger, '/ dpId:', currentDpId);
     let text: string | null = null;
+    let audio: string | null = null;
     switch (trigger) {
       case 'PRE_ALERT':
         text = guidance?.preAlert ?? guidance?.primary ?? null;
+        audio = guidance?.preAlertAudio ?? guidance?.primaryAudio ?? null;
         break;
       case 'ARRIVAL':
         text = guidance?.primary ?? null;
+        audio = guidance?.primaryAudio ?? null;
         break;
       case 'CONFIRMATION':
         text = guidance?.primary ?? '잘 가고 있어요';
+        audio = guidance?.primaryAudio ?? null;
         break;
       case 'DEVIATION_WARNING':
         text = '경로를 벗어난 것 같아요';
@@ -294,10 +302,10 @@ export default function NavigationScreen({ navigation, route }: Props) {
     }
     if (text) {
       lastSpokenKey.current = spokenKey;
-      console.log('[TTS] 재생:', text);
+      console.log('[TTS] 재생:', text, audio ? '(Google TTS)' : '(device TTS)');
       if (ttsEnabled) {
         ttsStop();
-        ttsSpeak(text);
+        ttsSpeak(text, audio);
       }
     }
   }, [trigger, guidance, currentDpId, ttsEnabled, isRerouting]);
