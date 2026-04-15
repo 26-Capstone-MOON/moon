@@ -61,4 +61,4 @@ For code patterns (Controller, Service, Client, WebSocket handler), see `coding.
 All enum definitions with values and meanings are in `domain.md`.
 Frontend, backend, and Python must use identical enum values.
 
-Key enums: DpType, NavigationState, MatchStatus, Position, GuidanceAction, WeatherCondition, Trigger
+Key enums: DpType, NavigationState, MatchStatus, Position, GuidanceAction, Trigger
