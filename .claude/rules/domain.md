@@ -47,12 +47,12 @@
   3. Confirm only top-scoring candidates as Virtual DPs
   4. Enforce minimum 100m spacing between confirmed VDPs
 - `dpType: VIRTUAL`, `turnType: null`
-- Panorama: front direction only (regular DPs get 3 directions)
+- Panorama: 3 directions (front + left + right), same as regular DPs
 
 ---
 
 ## Landmark
-- Selected by Python scoring model: `S_final = (P × h × U) × (D × w) × C`
+- Selected by Python scoring model: `S_final = (P × h × U) × D`
 - Frontend NEVER selects landmarks
 - Frontend receives `selectedLandmark` in each DP
 - If no landmark → `selectedLandmark: null` → fallback to basic instruction
@@ -63,8 +63,8 @@
 
 ### Formula
 ```
-S_final =    (P × h × U)  ×   (D × w)  ×   C
-           ├─ Intrinsic ─┤   ├─ Env. ─┤  ├ Trust ┤
+S_final =    (P × h × U)  ×   D
+           ├─ Intrinsic ─┤   ├ Spatial ┤
 ```
 All parameters are **multiplicative**. No additive components.
 
@@ -98,40 +98,19 @@ Same `category_group_code` count within 100m:
 D = 1 - d / MD
 ```
 - `d`: straight-line distance from DP to landmark (m)
-- `MD`: adaptive search radius from STEP 2 POI collection (30m / 50m / 75m / 100m)
+- `MD`: adaptive search radius from POI collection (30m / 50m / 75m / 100m)
 
-### w — Weather Correction
+### Scoring Example (3pm, search radius 100m)
 
-| Weather | w | Enum |
-|---|---|---|
-| Clear | 1.0 | `CLEAR` |
-| Cloudy | 0.85 | `CLOUDY` |
-| Rain | 0.6 | `RAIN` |
-| Snow | 0.5 | `SNOW` |
-| Fog | 0.4 | `FOG` |
-
-### C — Cross-Validation Confidence (multiplicative)
-
-| MatchStatus | C | Meaning |
-|---|---|---|
-| `MATCHED` | 1.5 | POI + Vision both confirm → high confidence |
-| `POI_ONLY` | 1.2 | Only in POI data → possible new opening |
-| `VISION_ONLY` | 1.0 | Only in image → no adjustment |
-
-- VISION_ONLY (1.0) retains full Intrinsic × Env score. Not filtered out.
-- Matching algorithm: exact → partial → category match (in order)
-
-### Scoring Example (clear day, 3pm, search radius 100m)
-
-| Landmark | Intrinsic (P×h×U) | Env (D×w) | C | S_final |
-|---|---|---|---|---|
-| Kookmin Bank (30m, unique, MATCHED, open) | 0.9×1.0×1.0=0.9 | 0.7×1.0=0.7 | 1.5 | **0.945** |
-| GS25 (20m, 1 of 3, POI_ONLY, open) | 0.7×1.0×0.4=0.28 | 0.8×1.0=0.8 | 1.2 | **0.269** |
-| Private restaurant (50m, unique, VISION_ONLY, closed) | 0.25×0.5×1.0=0.125 | 0.5×1.0=0.5 | 1.0 | **0.063** |
+| Landmark | Intrinsic (P×h×U) | D | S_final |
+|---|---|---|---|
+| Kookmin Bank (30m, unique, open) | 0.9×1.0×1.0=0.9 | 0.7 | **0.630** |
+| GS25 (20m, 1 of 3, open) | 0.7×1.0×0.4=0.28 | 0.8 | **0.224** |
+| Private restaurant (50m, unique, closed) | 0.25×0.5×1.0=0.125 | 0.5 | **0.063** |
 
 ---
 
-## Sequence Optimization (STEP 4.5)
+## Sequence Optimization
 
 - **Phase 1 (forward greedy)**: no consecutive same name/category
 - **Phase 2 (direction consistency)**: detect left-right-left zigzag → swap within 20% score drop
@@ -149,12 +128,13 @@ Left/right: bearing-based, recorded in `position` field. Opposite-side NOT filte
 
 ---
 
-## Panorama + Vision (STEP 3)
+## Panorama + Vision (STEP 4)
 
 - Server generates `panoramaRequest` → client executes Naver Panorama API
 - All DPs (including Virtual DP): 3 directions (front + left + right)
 - turnType-based isPrimary: left turn→left, right turn→right, other→front
 - Vision validation: if turnType facility not visible in primary → distance-based fallback
+- Panorama/Vision results are used for guidance text enrichment, NOT for scoring
 
 ---
 

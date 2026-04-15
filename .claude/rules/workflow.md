@@ -117,7 +117,7 @@ Never skip steps. Mock first → flow works → then connect real API.
 ### Python Development Phases
 
 **Day 1~2:** Foundation + DP extraction + Midpoint + POI + panorama
-**Day 3:** Scoring + cross-validation + sequence optimization
+**Day 3:** Scoring + sequence optimization
 **Day 4~5:** Vision prompts + guidance generation (Mode A + B)
 **Day 6:** Off-route detection + rerouting
 **Day 7~8:** Endpoint integration + full testing

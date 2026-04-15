@@ -16,7 +16,7 @@ Guidance channels: map (base layer) + spatial description + voice TTS + haptic v
 Navigation is based on **Decision Points (DP)**.
 
 At each DP, the backend:
-1. Selects the best landmark via scoring model: `S_final = (P × h × U) × (D × w) × C`
+1. Selects the best landmark via scoring model: `S_final = (P × h × U) × D`
 2. Generates spatial description guidance per DP type
 3. Sends complete guidance package to frontend
 
@@ -114,7 +114,7 @@ cd services/deviation && uvicorn main:app --port 8001
 
 ## 5. Backend Pipeline (Reference Only)
 
-Python dp-pipeline executes STEP 0~6 (Weather → DP extraction → Virtual DP → POI → Panorama → Scoring → Sequence optimization → Guidance → Cache). See `domain.md` for full details.
+Python dp-pipeline executes STEP 1~6 (DP extraction → Virtual DP → POI → Panorama → Scoring + Sequence optimization → Guidance → Cache). See `domain.md` for full details.
 
 ---
 

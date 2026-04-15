@@ -100,8 +100,8 @@ src/main/java/com/moonapp/
 │   ├── PipelineClient.java        # dp-pipeline (port 8000)
 │   └── DeviationClient.java       # deviation (port 8001)
 └── model/
-    ├── enums/        DpType, NavigationState, MatchStatus, Position, GuidanceAction, WeatherCondition
-    └── vo/           Location, Weather
+    ├── enums/        DpType, NavigationState, MatchStatus, Position, GuidanceAction
+    └── vo/           Location
 ```
 
 ### Layer Rules
@@ -166,15 +166,14 @@ services/
 ├── dp-pipeline/                    # Route creation pipeline (port 8000)
 │   ├── main.py                    # FastAPI app entry
 │   ├── config.py                  # API keys, settings
-│   ├── constants.py               # turnType mapping, P values, w_mod, isOpen coefficients
+│   ├── constants.py               # turnType mapping, P values, isOpen coefficients
 │   ├── schemas.py                 # Pydantic models (request/response)
 │   ├── geo.py                     # Haversine, bearing, point-segment distance, LineString interpolation
 │   ├── tmap_service.py            # Tmap API call + GeoJSON parsing
 │   ├── dp_extractor.py            # turnType-based DP extraction
 │   ├── poi_service.py             # Kakao Local API + adaptive radius + left/right judgment
 │   ├── panorama_service.py        # Multi-direction pan calculation + isPrimary
-│   ├── scoring_service.py         # S_final = (P × h × U) × (D × w) × C
-│   ├── cross_validator.py         # POI vs Vision matching (exact → partial → category)
+│   ├── scoring_service.py         # S_final = (P × h × U) × D
 │   ├── sequence_optimizer.py      # Greedy + direction consistency
 │   ├── guidance_generator.py      # DP type templates + LLM prompt
 │   └── route_cache.py             # Cache management
@@ -207,7 +206,7 @@ services/
 | Module | Functions | Used By |
 |---|---|---|
 | `geo.py` | Haversine distance, bearing, point-segment distance, LineString interpolation | Everywhere |
-| `constants.py` | turnType mapping, P(h) category values, w_mod table, isOpen coefficients | Scoring, DP extraction |
+| `constants.py` | turnType mapping, P(h) category values, isOpen coefficients | Scoring, DP extraction |
 | `schemas.py` | Pydantic models for all request/response types | All endpoints |
 
 ### What NOT to Do (Python)
