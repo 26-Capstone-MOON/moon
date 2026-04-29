@@ -108,7 +108,6 @@ class RouteResponse(BaseModel):
         default_factory=list,
         description="Ordered list of coordinates forming the route polyline",
     )
-    weather: str = "CLEAR"  # WeatherCondition enum value
     is_rerouted: bool = False
     previous_route_id: Optional[str] = None
 
@@ -154,57 +153,6 @@ class ConversationRequest(BaseModel):
 
 class ConversationResponse(BaseModel):
     answer: str
-
-
-# ---------------------------------------------------------------------------
-# Cross-validation
-# ---------------------------------------------------------------------------
-
-class CrossValidationResult(BaseModel):
-    poi_name: str
-    vision_name: Optional[str] = None
-    match_status: str  # MATCHED | POI_ONLY | VISION_ONLY
-    c_bonus: float  # 0.5 | 0.2 | 0.0
-    category_group_code: str
-
-
-# ---------------------------------------------------------------------------
-# Vision models
-# ---------------------------------------------------------------------------
-
-class VisionSignResult(BaseModel):
-    name: str
-    position_in_image: str  # left | center | right
-    confidence: str  # high | medium | low
-
-
-class VisionEnvironmentFeature(BaseModel):
-    description: str  # Korean, max 10 chars (e.g., "회색 건물")
-    position_in_image: str  # left | center | right
-    feature_type: str  # building | wall | fence | tree | bench | sign_structure | gate | other
-
-
-class VisionFacilityResult(BaseModel):
-    facility_type: str  # crosswalk | stairs | overpass | underpass | elevator
-    visible: bool
-    visibility: str  # clear | partial | not_visible
-    position_in_image: Optional[str] = None
-    description: Optional[str] = None
-
-
-class VisionShotResult(BaseModel):
-    direction: str  # front | left | right
-    pan: float
-    is_primary: bool
-    signs: list[VisionSignResult] = Field(default_factory=list)
-    environment: list[VisionEnvironmentFeature] = Field(default_factory=list)
-    facility: Optional[VisionFacilityResult] = None
-
-
-class VisionDpResult(BaseModel):
-    dp_index: int
-    dp_type: str
-    shots: list[VisionShotResult] = Field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------

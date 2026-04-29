@@ -1,6 +1,6 @@
 """STEP 2: Midpoint (Virtual DP) insertion for long straight segments.
 
-Scores candidates with P(h) × (D(w) + U) — C_bonus excluded at midpoint stage.
+Scores candidates with (P × h × U) × D — same multiplicative formula as STEP 5.
 Selected midpoints include SelectedLandmark, Korean guidance, and front-only panorama.
 """
 
@@ -31,7 +31,7 @@ from schemas import (
     PanoramaRequest,
     SelectedLandmark,
 )
-from scoring_service import compute_d_w, compute_p_h, compute_uniqueness
+from scoring_service import compute_d, compute_p_h, compute_uniqueness
 
 MAX_CONCURRENT_POI_SEARCHES = 5
 
@@ -192,26 +192,24 @@ def _bearing_at_point(
 def _score_midpoint_poi(
     poi: PoiResult,
     all_pois: list[PoiResult],
-    weather: str,
     is_open_status: str = "UNKNOWN",
 ) -> float:
     """Score POI for midpoint candidate ranking.
 
-    Uses P(h) × (D(w) + U). C_bonus is excluded at midpoint stage.
+    Uses S_final = (P × h × U) × D — same multiplicative formula as STEP 5.
 
     Args:
         poi: Target POI.
         all_pois: All POIs near this candidate (for uniqueness).
-        weather: WeatherCondition enum value.
         is_open_status: "OPEN", "CLOSED", or "UNKNOWN".
 
     Returns:
         Midpoint score (higher is better).
     """
     p_h = compute_p_h(poi, is_open_status)
-    d_w = compute_d_w(poi.distance, weather)
     u = compute_uniqueness(poi, all_pois)
-    return p_h * (d_w + u)
+    d = compute_d(poi.distance)
+    return p_h * u * d
 
 
 # ---------------------------------------------------------------------------
@@ -241,7 +239,7 @@ def _subject_particle(name: str) -> str:
 def _build_midpoint_guidance(poi: PoiResult) -> Guidance:
     """Generate Virtual DP guidance text from selected POI.
 
-    Pattern: "{위치}에 {이름}이/가 보이면 잘 가고 있는 거예요. 계속 직진하세요."
+    Notion pattern: "{이름}이/가 보이면 잘 가고 있는 거예요. 계속 직진하세요."
 
     Args:
         poi: The selected landmark POI.
@@ -249,13 +247,10 @@ def _build_midpoint_guidance(poi: PoiResult) -> Guidance:
     Returns:
         Guidance with Korean primary text, no pre_alert or action.
     """
-    position_text = {"LEFT": "왼쪽", "RIGHT": "오른쪽", "FRONT": "앞쪽"}.get(
-        poi.position, "근처"
-    )
     particle = _subject_particle(poi.place_name)
     primary = (
-        f"{position_text}에 {poi.place_name}{particle} 보이면 "
-        f"잘 가고 있는 거예요. 계속 직진하세요."
+        f"{poi.place_name}{particle} 보이면 잘 가고 있는 거예요. "
+        f"계속 직진하세요."
     )
     return Guidance(primary=primary, pre_alert=None, action=None)
 
@@ -356,13 +351,12 @@ def _greedy_select(
 async def insert_midpoints(
     decision_points: list[DecisionPoint],
     route_coordinates: list[tuple[float, float]],
-    weather: str = "CLEAR",
 ) -> list[DecisionPoint]:
     """Insert Virtual DPs into gaps > 200m between consecutive DPs.
 
     For each qualifying gap:
     1. Generate candidates at 30m intervals along route segment.
-    2. Search POIs at each candidate and score with P(h) × (D(w) + U).
+    2. Search POIs at each candidate and score with (P × h × U) × D.
     3. Greedily select top candidates with >= 100m spacing.
     4. If ALL candidates lack POIs, insert 1 geometric midpoint as fallback.
     5. Build SelectedLandmark, Korean guidance, and front-only panorama.
@@ -370,7 +364,6 @@ async def insert_midpoints(
     Args:
         decision_points: Sorted DPs from dp_extractor.
         route_coordinates: Full route polyline as (lat, lon) tuples.
-        weather: WeatherCondition enum value for D(w) scoring.
 
     Returns:
         New list with virtual DPs inserted, sorted by distance_from_start.
@@ -418,17 +411,6 @@ async def insert_midpoints(
                 bearing = _bearing_at_point(lat, lon, route_coordinates)
                 pois = await search_pois_for_dp(lat, lon, bearing)
 
-            if pois:
-                scores = [
-                    _score_midpoint_poi(p, pois, weather) for p in pois
-                ]
-                best_idx = max(range(len(pois)), key=lambda i: scores[i])
-                best_poi = pois[best_idx]
-                score = scores[best_idx]
-            else:
-                best_poi = None
-                score = 0.0
-
             return _ScoredCandidate(
                 dist_from_start=dist,
                 lat=lat,
@@ -465,7 +447,6 @@ async def insert_midpoints(
                 score = _score_midpoint_poi(
                     poi,
                     cand.all_pois,
-                    weather,
                     is_open_status,
                 )
                 if score > best_score:
@@ -492,7 +473,7 @@ async def insert_midpoints(
                 bearing=closest.bearing,
                 distance_from_start=closest.dist_from_start,
                 guidance=Guidance(
-                    primary="직진하세요.",
+                    primary="계속 직진하세요.",
                     pre_alert=None,
                     action=None,
                 ),
@@ -523,7 +504,7 @@ async def insert_midpoints(
                     is_open_map.get(cand.best_poi.place_name, "UNKNOWN"),
                 )
                 final_score = _score_midpoint_poi(
-                    cand.best_poi, cand.all_pois, weather, is_open_status,
+                    cand.best_poi, cand.all_pois, is_open_status,
                 )
                 landmark = _poi_to_landmark(
                     cand.best_poi, final_score, is_open_status,
@@ -532,7 +513,7 @@ async def insert_midpoints(
             else:
                 landmark = None
                 guidance = Guidance(
-                    primary="직진하세요.",
+                    primary="계속 직진하세요.",
                     pre_alert=None,
                     action=None,
                 )

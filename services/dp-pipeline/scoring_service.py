@@ -1,7 +1,7 @@
-"""STEP 5: Landmark scoring — S_final = P(h) x (D(w) + U + C_bonus).
+"""STEP 5: Landmark scoring — S_final = (P × h × U) × D.
 
-Scores POI candidates for each DP and selects the best landmark.
-C_bonus defaults to POI_ONLY (+0.2) until Vision cross-validation is available.
+All factors are multiplicative. Scores POI candidates for each DP and
+selects the best landmark.
 """
 
 from __future__ import annotations
@@ -10,14 +10,11 @@ from dataclasses import dataclass
 
 from constants import (
     CATEGORY_P_VALUES,
-    CROSS_VALIDATION_BONUS,
     DEFAULT_P_VALUE,
     IS_OPEN_COEFFICIENT,
     MAX_SEARCH_RADIUS,
     UNIQUENESS_DEFAULT,
     UNIQUENESS_SCORES,
-    WEATHER_W_MOD,
-    WeatherCondition,
 )
 from places_service import poi_identity_key
 from poi_service import PoiResult
@@ -97,18 +94,20 @@ FRANCHISE_RESTAURANT_KEYWORDS: list[str] = [
 
 @dataclass
 class ScoredPoi:
-    """POI with full scoring breakdown."""
+    """POI with full scoring breakdown.
+
+    S_final = (P × h × U) × D
+    """
 
     poi: PoiResult
-    p_h: float       # P(h) = base_or_sub_P * h_multiplier
-    d_w: float       # D(w) = (1 - d/MD) * w_mod
+    p_h: float       # P × h = base_or_sub_P × h_multiplier
     u: float         # Uniqueness
-    c_bonus: float   # Cross-validation bonus
-    s_final: float   # P(h) * (D(w) + U + C_bonus)
+    d: float         # D = 1 - d / MD
+    s_final: float   # (P × h × U) × D
 
 
 # ---------------------------------------------------------------------------
-# P(h) — Category recognition x business hour correction
+# P × h — Category recognition × business hour correction
 # ---------------------------------------------------------------------------
 
 def _get_sub_p(category_code: str, category_name: str) -> float | None:
@@ -151,14 +150,14 @@ def compute_p_h(
     poi: PoiResult,
     is_open_status: str = "UNKNOWN",
 ) -> float:
-    """Compute P(h) = base_or_sub_P * h_multiplier.
+    """Compute P × h = base_or_sub_P × h_multiplier.
 
     Args:
         poi: POI result with category info
         is_open_status: "OPEN", "CLOSED", or "UNKNOWN"
 
     Returns:
-        P(h) value.
+        P × h value.
     """
     base_p = CATEGORY_P_VALUES.get(poi.category_group_code, DEFAULT_P_VALUE)
 
@@ -178,22 +177,19 @@ def compute_p_h(
 
 
 # ---------------------------------------------------------------------------
-# D(w) — Distance fitness x weather correction
+# D — Distance fitness
 # ---------------------------------------------------------------------------
 
-def compute_d_w(distance: float, weather: str = "CLEAR") -> float:
-    """Compute D(w) = (1 - d/MD) * w_mod.
+def compute_d(distance: float) -> float:
+    """Compute D = 1 - d / MD, clamped to >= 0.
 
     Args:
         distance: Straight-line distance from DP to POI (meters)
-        weather: WeatherCondition enum value
 
     Returns:
-        D(w) value, clamped to >= 0.
+        D value.
     """
-    d_ratio = max(0.0, 1.0 - distance / MAX_SEARCH_RADIUS)
-    w_mod = WEATHER_W_MOD.get(weather, 1.0)
-    return d_ratio * w_mod
+    return max(0.0, 1.0 - distance / MAX_SEARCH_RADIUS)
 
 
 # ---------------------------------------------------------------------------
@@ -233,51 +229,41 @@ def compute_uniqueness(
 def score_poi(
     poi: PoiResult,
     all_pois: list[PoiResult],
-    weather: str = "CLEAR",
     is_open_status: str = "UNKNOWN",
-    match_status: str = "POI_ONLY",
 ) -> ScoredPoi:
-    """Compute S_final for a single POI.
+    """Compute S_final = (P × h × U) × D for a single POI.
 
     Args:
         poi: Target POI
         all_pois: All POIs near this DP (for uniqueness calculation)
-        weather: WeatherCondition enum value
         is_open_status: "OPEN", "CLOSED", or "UNKNOWN"
-        match_status: "MATCHED", "POI_ONLY", or "VISION_ONLY"
 
     Returns:
         ScoredPoi with full breakdown.
     """
     p_h = compute_p_h(poi, is_open_status)
-    d_w = compute_d_w(poi.distance, weather)
     u = compute_uniqueness(poi, all_pois)
-    c_bonus = CROSS_VALIDATION_BONUS.get(match_status, 0.0)
-    s_final = p_h * (d_w + u + c_bonus)
+    d = compute_d(poi.distance)
+    s_final = p_h * u * d
 
     return ScoredPoi(
         poi=poi,
         p_h=p_h,
-        d_w=d_w,
         u=u,
-        c_bonus=c_bonus,
+        d=d,
         s_final=s_final,
     )
 
 
 def rank_pois(
     pois: list[PoiResult],
-    weather: str = "CLEAR",
     is_open_statuses: dict[str, str] | None = None,
-    match_statuses: dict[str, str] | None = None,
 ) -> list[ScoredPoi]:
     """Score and rank all POIs for a single DP.
 
     Args:
         pois: POI list from poi_service
-        weather: WeatherCondition enum value
         is_open_statuses: {place_name -> "OPEN"|"CLOSED"|"UNKNOWN"}, optional
-        match_statuses: {place_name -> "MATCHED"|"POI_ONLY"|"VISION_ONLY"}, optional
 
     Returns:
         List of ScoredPoi sorted by s_final descending.
@@ -286,18 +272,15 @@ def rank_pois(
         return []
 
     open_map = is_open_statuses or {}
-    match_map = match_statuses or {}
 
     scored = [
         score_poi(
             poi=poi,
             all_pois=pois,
-            weather=weather,
             is_open_status=open_map.get(
                 poi_identity_key(poi),
                 open_map.get(poi.place_name, "UNKNOWN"),
             ),
-            match_status=match_map.get(poi.place_name, "POI_ONLY"),
         )
         for poi in pois
     ]
@@ -308,20 +291,16 @@ def rank_pois(
 
 def select_landmark(
     pois: list[PoiResult],
-    weather: str = "CLEAR",
     is_open_statuses: dict[str, str] | None = None,
-    match_statuses: dict[str, str] | None = None,
 ) -> ScoredPoi | None:
     """Select the best landmark for a DP.
 
     Args:
         pois: POI list from poi_service
-        weather: WeatherCondition enum value
         is_open_statuses: {place_name -> "OPEN"|"CLOSED"|"UNKNOWN"}, optional
-        match_statuses: {place_name -> "MATCHED"|"POI_ONLY"|"VISION_ONLY"}, optional
 
     Returns:
         Best ScoredPoi, or None if no POIs.
     """
-    ranked = rank_pois(pois, weather, is_open_statuses, match_statuses)
+    ranked = rank_pois(pois, is_open_statuses)
     return ranked[0] if ranked else None

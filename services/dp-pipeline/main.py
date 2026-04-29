@@ -52,10 +52,10 @@ from schemas import (
 )
 from guidance_generator import generate_guidance
 from tts_service import synthesize, synthesize_guidance
-from scoring_service import ScoredPoi, select_landmark
+from scoring_service import ScoredPoi, rank_pois, select_landmark
+from sequence_optimizer import optimize_sequence
 from smoke_navigation_check import build_report
 from tmap_service import request_pedestrian_route
-from weather_service import fetch_weather
 
 WALKING_SPEED_MPS = 1.2
 
@@ -357,7 +357,6 @@ def _build_mock_route_response(request: RouteRequest) -> RouteResponse:
         total_time=total_distance / WALKING_SPEED_MPS,
         decision_points=decision_points,
         route_line_string=[_location_from_tuple(coords) for coords in route_coords],
-        weather="CLEAR",
         is_rerouted=False,
         previous_route_id=None,
     )
@@ -530,12 +529,9 @@ async def _build_live_pipeline_summary(
 
     decision_points_before_midpoint = extract_decision_points(tmap_result)
 
-    weather = await fetch_weather(request.origin_lat, request.origin_lng)
-
     decision_points = await insert_midpoints(
         decision_points_before_midpoint,
         tmap_result.coordinates,
-        weather=weather,
     )
     poi_summary: list[dict] = []
 
@@ -715,6 +711,34 @@ def _resolve_is_open_status(
     )
 
 
+def _scored_from_selected_landmark(landmark: SelectedLandmark) -> ScoredPoi:
+    """Synthesize a ScoredPoi from an existing SelectedLandmark.
+
+    Used so VIRTUAL DPs (already finalized by midpoint_service) can participate
+    in the sequence-optimizer chain for name-dedup. The single-candidate list
+    ensures the optimizer cannot swap a VIRTUAL DP's landmark.
+    """
+    location = landmark.location
+    poi = PoiResult(
+        place_name=landmark.name,
+        category_group_code=landmark.category_code,
+        category_name="",
+        latitude=location.latitude if location else 0.0,
+        longitude=location.longitude if location else 0.0,
+        distance=landmark.distance,
+        position=landmark.position,
+        p_value=0.0,
+        same_category_count_100m=None,
+    )
+    return ScoredPoi(
+        poi=poi,
+        p_h=0.0,
+        u=0.0,
+        d=0.0,
+        s_final=landmark.score,
+    )
+
+
 def _build_selected_landmark(
     scored: ScoredPoi,
     is_open_map: dict[str, str],
@@ -783,13 +807,10 @@ async def _build_route_response(request: RouteRequest) -> RouteResponse:
         print(f"  dp={dp.dp_id}, type={dp.dp_type}, turnType={dp.turn_type}, dist={dp.distance_from_start:.0f}m")
     print(f"{'='*60}")
 
-    weather = await fetch_weather(request.origin_lat, request.origin_lng)
-
     # Midpoint insertion — virtual DPs come back with landmark + guidance + panorama
     decision_points = await insert_midpoints(
         decision_points,
         tmap_result.coordinates,
-        weather=weather,
     )
 
     print(f"\n[STEP2] Midpoint 삽입 후: {len(decision_points)}개")
@@ -799,15 +820,27 @@ async def _build_route_response(request: RouteRequest) -> RouteResponse:
         print(f"  dp={dp.dp_id}, type={dp.dp_type}, landmark={lm}, guidance={g}")
     print(f"{'='*60}")
 
-    # For non-VIRTUAL DPs: POI search + scoring + landmark selection + panorama
-    # Track ScoredPoi per DP for guidance generation (STEP 6)
-    _scored_map: dict[str, ScoredPoi | None] = {}
-    _crosswalk_before: dict[str, ScoredPoi | None] = {}
-    _crosswalk_after: dict[str, ScoredPoi | None] = {}
+    # ----- STEP 3: POI search + per-DP ranking (top-k candidates kept for STEP 4) -----
+    # Build parallel arrays indexed by decision_points order.
+    dp_candidates: list[list[ScoredPoi]] = []
+    crosswalk_after_per_dp: dict[str, ScoredPoi | None] = {}
+    is_open_per_dp: dict[str, dict[str, str]] = {}
 
     for dp in decision_points:
         if dp.dp_type == "VIRTUAL":
-            continue  # already has landmark/guidance/panorama from midpoint_service
+            # midpoint_service already chose a landmark; feed it as a single
+            # fixed candidate so it participates in the sequence-dedup chain.
+            if dp.selected_landmark is not None:
+                dp_candidates.append([_scored_from_selected_landmark(dp.selected_landmark)])
+            else:
+                dp_candidates.append([])
+            is_open_per_dp[dp.dp_id] = {}
+            continue
+
+        if dp.dp_type in ("DEPARTURE", "ARRIVAL"):
+            dp_candidates.append([])
+            is_open_per_dp[dp.dp_id] = {}
+            continue
 
         bearing = _get_dp_bearing(dp, tmap_result.coordinates)
 
@@ -817,42 +850,26 @@ async def _build_route_response(request: RouteRequest) -> RouteResponse:
                 dp.location.longitude,
                 bearing,
             )
-            pois = []
+            print(
+                f"  [STEP3] CROSSWALK dp={dp.dp_id}: "
+                f"before_pois={len(crosswalk_result.before)}, "
+                f"after_pois={len(crosswalk_result.after)}"
+            )
             combined_pois = crosswalk_result.before + crosswalk_result.after
-            print(f"  [STEP3] CROSSWALK dp={dp.dp_id}: before_pois={len(crosswalk_result.before)}, after_pois={len(crosswalk_result.after)}")
-            for p in crosswalk_result.before[:3]:
-                print(f"    before: {p.place_name} ({p.category_group_code}) dist={p.distance:.0f}m pos={p.position}")
-            for p in crosswalk_result.after[:3]:
-                print(f"    after:  {p.place_name} ({p.category_group_code}) dist={p.distance:.0f}m pos={p.position}")
             is_open_map = (
                 await fetch_is_open_statuses(combined_pois)
                 if combined_pois
                 else {}
             )
-            before_best = (
-                select_landmark(crosswalk_result.before, weather, is_open_map)
-                if crosswalk_result.before
-                else None
-            )
+            before_ranked = rank_pois(crosswalk_result.before, is_open_map)
             after_best = (
-                select_landmark(crosswalk_result.after, weather, is_open_map)
+                select_landmark(crosswalk_result.after, is_open_map)
                 if crosswalk_result.after
                 else None
             )
-            b_name = f"{before_best.poi.place_name}(score={before_best.s_final:.2f})" if before_best else "NONE"
-            a_name = f"{after_best.poi.place_name}(score={after_best.s_final:.2f})" if after_best else "NONE"
-            print(f"    → before_best={b_name}, after_best={a_name}")
-            primary_landmark = before_best or after_best
-            if primary_landmark is not None:
-                dp.selected_landmark = _build_selected_landmark(
-                    primary_landmark, is_open_map,
-                )
-            _scored_map[dp.dp_id] = before_best
-            _crosswalk_before[dp.dp_id] = before_best
-            _crosswalk_after[dp.dp_id] = after_best
-        elif dp.dp_type in ("DEPARTURE", "ARRIVAL"):
-            pois = []
-            _scored_map[dp.dp_id] = None
+            dp_candidates.append(before_ranked)
+            crosswalk_after_per_dp[dp.dp_id] = after_best
+            is_open_per_dp[dp.dp_id] = is_open_map
         else:
             pois = await search_pois_for_dp(
                 dp.location.latitude,
@@ -861,26 +878,51 @@ async def _build_route_response(request: RouteRequest) -> RouteResponse:
             )
             print(f"  [STEP3] {dp.dp_type} dp={dp.dp_id}: pois={len(pois)}")
             for p in pois[:5]:
-                print(f"    poi: {p.place_name} ({p.category_group_code}) dist={p.distance:.0f}m pos={p.position}")
-
-        if pois:
-            is_open_map = await fetch_is_open_statuses(pois)
-            best = select_landmark(pois, weather, is_open_map)
-            if best is not None:
-                dp.selected_landmark = _build_selected_landmark(
-                    best, is_open_map,
+                print(
+                    f"    poi: {p.place_name} ({p.category_group_code}) "
+                    f"dist={p.distance:.0f}m pos={p.position}"
                 )
-                _scored_map[dp.dp_id] = best
-                print(f"    → selected: {best.poi.place_name} (s_final={best.s_final:.2f}, P={best.p_h:.2f}, D={best.d_w:.2f}, U={best.u:.2f}, C={best.c_bonus:.2f})")
-            else:
-                _scored_map.setdefault(dp.dp_id, None)
-                print(f"    → selected: NONE (scoring returned None)")
-        else:
-            _scored_map.setdefault(dp.dp_id, None)
-            if dp.dp_type not in ("DEPARTURE", "ARRIVAL"):
-                print(f"    → selected: NONE (no POIs found)")
+            is_open_map = await fetch_is_open_statuses(pois) if pois else {}
+            ranked = rank_pois(pois, is_open_map)
+            dp_candidates.append(ranked)
+            is_open_per_dp[dp.dp_id] = is_open_map
 
-        # Panorama: VIRTUAL already handled; regular DPs get 3-direction
+    # ----- STEP 4: Sequence optimization (name dedup + direction consistency) -----
+    optimized_landmarks = optimize_sequence(dp_candidates)
+
+    print(f"\n{'='*60}")
+    print(f"[STEP4] 시퀀스 최적화 결과 ({len(optimized_landmarks)}개)")
+    print(f"{'='*60}")
+    for dp, sel in zip(decision_points, optimized_landmarks):
+        name = sel.poi.place_name if sel else "NONE"
+        score = f"{sel.s_final:.2f}" if sel else "—"
+        print(f"  dp={dp.dp_id}, type={dp.dp_type}, selected={name}, score={score}")
+    print(f"{'='*60}")
+
+    # ----- STEP 5: Apply optimized selection + panorama + guidance generation -----
+    prev_landmark_name: str | None = None
+    for i, dp in enumerate(decision_points):
+        if dp.dp_type == "VIRTUAL":
+            # midpoint_service finalized landmark+guidance+panorama already.
+            if dp.selected_landmark is not None:
+                prev_landmark_name = dp.selected_landmark.name
+            else:
+                prev_landmark_name = None
+            continue
+
+        selected = optimized_landmarks[i]
+        is_open_map = is_open_per_dp.get(dp.dp_id, {})
+        after_scored = crosswalk_after_per_dp.get(dp.dp_id)
+
+        # Apply optimized selection to dp.selected_landmark.
+        # CROSSWALK fallback: if before-crossing has no landmark, surface the
+        # after-crossing one in the API output instead of leaving it null.
+        if selected is not None:
+            dp.selected_landmark = _build_selected_landmark(selected, is_open_map)
+        elif dp.dp_type == "CROSSWALK" and after_scored is not None:
+            dp.selected_landmark = _build_selected_landmark(after_scored, is_open_map)
+
+        # Panorama: regular DPs (3-direction), DEPARTURE/ARRIVAL (front-only).
         if dp.panorama_request is None:
             if dp.dp_type in ("DEPARTURE", "ARRIVAL"):
                 dp.panorama_request = PanoramaRequest(
@@ -896,20 +938,7 @@ async def _build_route_response(request: RouteRequest) -> RouteResponse:
                     dp.location, dp.turn_type,
                 )
 
-    # ----- STEP 6: Generate proper Korean guidance (replace Tmap placeholders) -----
-    prev_landmark_name: str | None = None
-    for i, dp in enumerate(decision_points):
-        if dp.dp_type == "VIRTUAL":
-            # Keep midpoint_service guidance; track landmark for prev chaining
-            if dp.selected_landmark is not None:
-                prev_landmark_name = dp.selected_landmark.name
-            else:
-                prev_landmark_name = None
-            continue
-
-        scored = _scored_map.get(dp.dp_id)
-
-        # next_dp_distance
+        # Guidance generation
         next_dp_distance: float | None = None
         if i < len(decision_points) - 1:
             next_dp_distance = (
@@ -917,7 +946,6 @@ async def _build_route_response(request: RouteRequest) -> RouteResponse:
                 - dp.distance_from_start
             )
 
-        # next_action for DEPARTURE (what action comes at the next DP)
         next_action: str | None = None
         if dp.dp_type == "DEPARTURE" and i < len(decision_points) - 1:
             next_tt = decision_points[i + 1].turn_type
@@ -928,8 +956,8 @@ async def _build_route_response(request: RouteRequest) -> RouteResponse:
         dp.guidance = generate_guidance(
             dp_type=dp.dp_type,
             turn_type=dp.turn_type,
-            selected_landmark=scored,
-            match_status="POI_ONLY" if scored else None,
+            selected_landmark=selected,
+            match_status="POI_ONLY" if selected else None,
             environment_desc=None,
             facility_visible=None,
             prev_landmark_name=prev_landmark_name,
@@ -937,21 +965,21 @@ async def _build_route_response(request: RouteRequest) -> RouteResponse:
             dest_name=request.dest_name or "",
             distance_from_start=dp.distance_from_start,
             next_action=next_action,
-            after_landmark=_crosswalk_after.get(dp.dp_id),
-            after_match_status=(
-                "POI_ONLY" if _crosswalk_after.get(dp.dp_id) else None
-            ),
+            after_landmark=after_scored,
+            after_match_status="POI_ONLY" if after_scored else None,
             after_environment_desc=None,
             tmap_description=dp.tmap_description,
         )
 
-        if scored is not None:
-            prev_landmark_name = scored.poi.place_name
+        if selected is not None:
+            prev_landmark_name = selected.poi.place_name
+        elif dp.dp_type == "CROSSWALK" and after_scored is not None:
+            prev_landmark_name = after_scored.poi.place_name
         else:
             prev_landmark_name = None
 
     print(f"\n{'='*60}")
-    print(f"[STEP6] 최종 DP 상태 ({len(decision_points)}개)")
+    print(f"[STEP5] 최종 DP 상태 ({len(decision_points)}개)")
     print(f"{'='*60}")
     for dp in decision_points:
         lm = dp.selected_landmark.name if dp.selected_landmark else "NONE"
@@ -978,7 +1006,6 @@ async def _build_route_response(request: RouteRequest) -> RouteResponse:
             Location(latitude=lat, longitude=lon)
             for lat, lon in tmap_result.coordinates
         ],
-        weather=weather,
         is_rerouted=False,
         previous_route_id=None,
     )

@@ -63,9 +63,8 @@ async def reroute(
     # [2] Pipeline re-run: STEP 1~4
     try:
         decision_points = _extract_dps(tmap_result)
-        weather = await _fetch_weather(request.current_lat, request.current_lng)
         decision_points = await _insert_midpoints(
-            decision_points, tmap_result.coordinates, weather,
+            decision_points, tmap_result.coordinates,
         )
         decision_points = _generate_panorama(decision_points)
     except Exception as exc:
@@ -110,7 +109,6 @@ async def reroute(
             Location(latitude=lat, longitude=lon)
             for lat, lon in tmap_result.coordinates
         ],
-        weather=weather,
         is_rerouted=True,
         previous_route_id=request.previous_route_id,
     )
@@ -152,26 +150,14 @@ def _extract_dps(tmap_result) -> list[DecisionPoint]:
     return extract_decision_points(tmap_result)
 
 
-async def _fetch_weather(lat: float, lng: float) -> str:
-    """Fetch weather condition. Wraps weather_service."""
-    try:
-        from weather_service import fetch_weather
-
-        return await fetch_weather(lat, lng)
-    except Exception:
-        logger.warning("Weather fetch failed, defaulting to CLEAR")
-        return "CLEAR"
-
-
 async def _insert_midpoints(
     dps: list[DecisionPoint],
     coordinates: list[tuple[float, float]],
-    weather: str,
 ) -> list[DecisionPoint]:
     """Insert virtual DPs on long segments. Wraps midpoint_service."""
     from midpoint_service import insert_midpoints
 
-    return await insert_midpoints(dps, coordinates, weather=weather)
+    return await insert_midpoints(dps, coordinates)
 
 
 def _generate_panorama(dps: list[DecisionPoint]) -> list[DecisionPoint]:

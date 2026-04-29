@@ -1,22 +1,30 @@
-"""STEP 4.5: Sequence optimization — greedy dedup + direction consistency.
+"""STEP 4: Sequence optimization — name dedup + direction consistency.
 
 After scoring selects the best landmark per DP, this module optimizes the
 full-route sequence to avoid confusing consecutive guidance.
 
-Phase 1 (forward greedy): no consecutive same name or category.
-Phase 2 (direction consistency): detect left→right→left zigzag and swap
-        within 20% score tolerance.
+Phase 1 (forward greedy): no consecutive same NAME landmarks. Category
+        duplicates are allowed (U already penalizes density, and brand
+        colors/signs differ visually).
+Phase 2 (direction consistency): detect LEFT→RIGHT→LEFT (or reverse)
+        zigzag and swap the middle slot to a same-side candidate when
+        score drop is within tolerance.
+
+Both phases consider only the top-k candidates per DP and require a
+swap candidate to stay within SWAP_SCORE_TOLERANCE of the original Top-1.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
-from poi_service import PoiResult
-from scoring_service import ScoredPoi, score_poi
+from scoring_service import ScoredPoi
 
-# Maximum score drop (%) allowed when swapping to fix zigzag
+# Maximum score drop (fraction) allowed when swapping a candidate
 SWAP_SCORE_TOLERANCE = 0.20
+
+# Number of top-ranked candidates per DP considered for swaps
+TOP_K_CANDIDATES = 5
 
 
 @dataclass
@@ -62,15 +70,17 @@ class DpLandmarkSlot:
 
 
 # ---------------------------------------------------------------------------
-# Phase 1: Forward greedy — eliminate consecutive same name/category
+# Phase 1: Forward greedy — eliminate consecutive same-name landmarks
 # ---------------------------------------------------------------------------
 
 def _phase1_dedup(slots: list[DpLandmarkSlot]) -> None:
-    """Eliminate consecutive same-name or same-category landmarks.
+    """Eliminate consecutive same-NAME landmarks (category dups allowed).
 
     Walks forward through the sequence. When a slot's selected landmark
-    shares name or category with the previous slot, try the next-best
-    candidate. If no alternative exists, keep the original (better to
+    shares the same name as the previous slot, scan up to TOP_K_CANDIDATES
+    ranked candidates for an alternative whose name differs and whose
+    score stays within SWAP_SCORE_TOLERANCE of the original Top-1.
+    If no qualifying alternative exists, keep the original (better to
     repeat than leave empty).
 
     Mutates slots in-place by updating selected_idx.
@@ -82,49 +92,55 @@ def _phase1_dedup(slots: list[DpLandmarkSlot]) -> None:
         if not curr.candidates or not prev.selected:
             continue
 
-        # Check conflict with previous
-        if not _conflicts(prev, curr):
+        if not _name_conflict(prev, curr):
             continue
 
-        # Try alternative candidates
-        best_alt = _find_non_conflicting(curr, prev)
-        if best_alt is not None:
-            curr.selected_idx = best_alt
+        alt = _find_alternative_name(curr, prev.place_name)
+        if alt is not None:
+            curr.selected_idx = alt
 
 
-def _conflicts(a: DpLandmarkSlot, b: DpLandmarkSlot) -> bool:
-    """Check if two slots have conflicting (same name or category) landmarks."""
+def _name_conflict(a: DpLandmarkSlot, b: DpLandmarkSlot) -> bool:
+    """Two slots conflict only when their landmark names are identical."""
     if a.place_name is None or b.place_name is None:
         return False
-    if a.place_name == b.place_name:
-        return True
-    if a.category_code == b.category_code:
-        return True
-    return False
+    return a.place_name == b.place_name
 
 
-def _find_non_conflicting(
+def _find_alternative_name(
     slot: DpLandmarkSlot,
-    prev: DpLandmarkSlot,
+    blocked_name: str | None,
 ) -> int | None:
-    """Find the best non-conflicting candidate index for a slot.
+    """Find an alternative candidate whose name differs from blocked_name.
+
+    Considers up to TOP_K_CANDIDATES candidates and only returns indices
+    whose score is within SWAP_SCORE_TOLERANCE of the original Top-1.
+
+    Args:
+        slot: DP slot to search alternatives for.
+        blocked_name: Name to avoid (typically the previous DP's landmark).
 
     Returns:
-        Candidate index, or None if all candidates conflict.
+        Candidate index, or None if no qualifying alternative exists.
     """
-    for idx in range(len(slot.candidates)):
+    if not slot.candidates or blocked_name is None:
+        return None
+
+    original_score = slot.candidates[0].s_final
+    if original_score <= 0:
+        return None
+
+    min_score = original_score * (1.0 - SWAP_SCORE_TOLERANCE)
+    limit = min(TOP_K_CANDIDATES, len(slot.candidates))
+
+    for idx in range(limit):
         if idx == slot.selected_idx:
             continue
-
-        original = slot.candidates[slot.selected_idx]
         candidate = slot.candidates[idx]
-
-        # Check conflict
-        if prev.place_name and candidate.poi.place_name == prev.place_name:
+        if candidate.poi.place_name == blocked_name:
             continue
-        if prev.category_code and candidate.poi.category_group_code == prev.category_code:
+        if candidate.s_final < min_score:
             continue
-
         return idx
 
     return None
@@ -171,20 +187,27 @@ def _try_swap_to_side(
 ) -> None:
     """Try to swap slot's landmark to one on target_side within tolerance.
 
-    Only swaps if the replacement score is within 20% of the current score.
+    Only swaps if the replacement is among the top-k candidates and its
+    score stays within SWAP_SCORE_TOLERANCE of the original Top-1.
 
     Args:
         slot: The slot to potentially swap.
         target_side: Desired position ("LEFT" or "RIGHT").
     """
-    if not slot.candidates or slot.score == 0:
+    if not slot.candidates:
         return
 
-    min_score = slot.score * (1.0 - SWAP_SCORE_TOLERANCE)
+    original_score = slot.candidates[0].s_final
+    if original_score <= 0:
+        return
 
-    for idx, candidate in enumerate(slot.candidates):
+    min_score = original_score * (1.0 - SWAP_SCORE_TOLERANCE)
+    limit = min(TOP_K_CANDIDATES, len(slot.candidates))
+
+    for idx in range(limit):
         if idx == slot.selected_idx:
             continue
+        candidate = slot.candidates[idx]
         if candidate.poi.position == target_side and candidate.s_final >= min_score:
             slot.selected_idx = idx
             return

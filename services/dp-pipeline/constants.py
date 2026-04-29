@@ -1,7 +1,5 @@
 """Pipeline constants: turnType mapping, scoring coefficients, thresholds."""
 
-from enum import Enum
-
 # ---------------------------------------------------------------------------
 # turnType → DpType mapping
 # ---------------------------------------------------------------------------
@@ -114,7 +112,7 @@ CATEGORY_P_VALUES: dict[str, float] = {
     "SW8": 0.8,   # Subway station
     "OL7": 0.75,  # Gas station
     "CS2": 0.7,   # Convenience store
-    "HP8": 0.65,  # Hospital
+    "HP8": 0.65,  # Hospital (sub-classifications override: 종합병원=0.9, 개인병원=0.55)
     "PM9": 0.6,   # Pharmacy
     "CT1": 0.55,  # Cultural facility
     "AT4": 0.5,   # Tourist attraction
@@ -140,27 +138,6 @@ IS_OPEN_COEFFICIENT: dict[str, float] = {
 }
 
 # ---------------------------------------------------------------------------
-# D(w) — Weather modifier (w_mod)
-# ---------------------------------------------------------------------------
-
-
-class WeatherCondition(str, Enum):
-    CLEAR = "CLEAR"
-    CLOUDY = "CLOUDY"
-    RAIN = "RAIN"
-    SNOW = "SNOW"
-    FOG = "FOG"
-
-
-WEATHER_W_MOD: dict[str, float] = {
-    WeatherCondition.CLEAR: 1.0,
-    WeatherCondition.CLOUDY: 0.85,
-    WeatherCondition.RAIN: 0.6,
-    WeatherCondition.SNOW: 0.5,
-    WeatherCondition.FOG: 0.4,
-}
-
-# ---------------------------------------------------------------------------
 # U — Uniqueness by same-category count within 100m
 # ---------------------------------------------------------------------------
 
@@ -172,20 +149,10 @@ UNIQUENESS_SCORES: dict[int, float] = {
 UNIQUENESS_DEFAULT: float = 0.2  # 4+
 
 # ---------------------------------------------------------------------------
-# C_bonus — Cross-validation bonus
-# ---------------------------------------------------------------------------
-
-CROSS_VALIDATION_BONUS: dict[str, float] = {
-    "MATCHED": 0.5,
-    "POI_ONLY": 0.2,
-    "VISION_ONLY": 0.0,
-}
-
-# ---------------------------------------------------------------------------
 # Distance / threshold constants
 # ---------------------------------------------------------------------------
 
-MAX_SEARCH_RADIUS: float = 100.0          # MD for D(w) formula (meters)
+MAX_SEARCH_RADIUS: float = 100.0          # MD for D = 1 - d/MD (meters)
 DEFAULT_POI_RADIUS: float = 50.0          # initial POI search radius (meters)
 POI_RADIUS_EXPAND_1: float = 75.0         # first expansion
 POI_RADIUS_EXPAND_2: float = 100.0        # second expansion

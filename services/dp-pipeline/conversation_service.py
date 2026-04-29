@@ -28,7 +28,6 @@ def _build_route_context(route: RouteResponse, current_dp_id: Optional[str]) -> 
     lines.append(f"출발지: ({route.origin.latitude:.6f}, {route.origin.longitude:.6f})")
     lines.append(f"목적지: {route.dest_name or '목적지'} ({route.destination.latitude:.6f}, {route.destination.longitude:.6f})")
     lines.append(f"총 거리: {route.total_distance:.0f}m, 예상 시간: {route.total_time:.0f}초")
-    lines.append(f"날씨: {route.weather}")
     lines.append(f"DP 수: {len(route.decision_points)}개")
     lines.append("")
 
