@@ -150,3 +150,6 @@ __pycache__/
 
 # HTML artifacts
 *.html
+
+# Local dev smoke/scratch scripts (not part of the prod server)
+/services/dp-pipeline/smoke_navigation_check.py

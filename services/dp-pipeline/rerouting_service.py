@@ -1,16 +1,24 @@
-"""Rerouting Service — re-request route and re-run pipeline on deviation.
+"""Rerouting Service — re-request route and re-run full pipeline on deviation.
 
 When DeviationDetector confirms DEVIATED (should_reroute=True), this service
-re-requests a route from Tmap and re-runs STEP 1~4 on the new route.
+re-requests a route from Tmap and re-runs the full STEP 1~5 pipeline on the
+new route (Notion §7.2). DP extraction, midpoint insertion, POI scoring,
+sequence optimization, and guidance generation all happen — so the rerouted
+route gets the same landmark-quality guidance as a freshly created one.
+
+Cache reuse: DPs from the previous route that match (same type, within 30m)
+are copied over with their selected_landmark / panorama / guidance intact.
+The shared pipeline runner treats them like VIRTUAL DPs — included in the
+sequence-optimizer chain via a single fixed candidate, but not overwritten.
 """
 
 from __future__ import annotations
 
 import logging
 import uuid
-from typing import Optional
 
 from geo import haversine
+from pipeline_runner import run_pipeline_steps_3_to_5
 from schemas import (
     DecisionPoint,
     Location,
@@ -60,21 +68,21 @@ async def reroute(
             error_message="경로를 찾을 수 없습니다",
         )
 
-    # [2] Pipeline re-run: STEP 1~4
+    # [2] Pipeline STEP 1~2 — DP extraction + midpoint insertion
     try:
         decision_points = _extract_dps(tmap_result)
         decision_points = await _insert_midpoints(
             decision_points, tmap_result.coordinates,
         )
-        decision_points = _generate_panorama(decision_points)
     except Exception as exc:
-        logger.error("Pipeline step failed during reroute: %s", exc)
+        logger.error("Pipeline STEP 1~2 failed during reroute: %s", exc)
         return RerouteResponse(
             success=False,
             error_message=f"파이프라인 오류: {exc}",
         )
 
-    # [3] Cache reuse — match new DPs with previous DPs
+    # [3] Cache reuse — match new DPs with previous DPs (must run BEFORE
+    # STEP 3-5 so the runner can skip cached DPs).
     reused_dp_ids: set[str] = set()
     reused_dp_count = 0
     if previous_dps:
@@ -82,11 +90,24 @@ async def reroute(
             decision_points, previous_dps, reused_dp_ids,
         )
 
-    # [3.5] STEP 6: Generate Korean guidance (replace Tmap placeholders)
-    # Skip DPs that already have reused guidance from previous route
-    _generate_guidance_for_dps(decision_points, request.dest_name, reused_dp_ids)
+    # [4] Pipeline STEP 3~5 — POI scoring → sequence opt → panorama + guidance.
+    # skip_dp_ids ensures cache-reused DPs keep their previous landmark/guidance
+    # but still participate in the name-dedup chain.
+    try:
+        await run_pipeline_steps_3_to_5(
+            decision_points=decision_points,
+            route_coordinates=tmap_result.coordinates,
+            dest_name=request.dest_name,
+            skip_dp_ids=reused_dp_ids,
+        )
+    except Exception as exc:
+        logger.error("Pipeline STEP 3~5 failed during reroute: %s", exc)
+        return RerouteResponse(
+            success=False,
+            error_message=f"파이프라인 오류: {exc}",
+        )
 
-    # [4] Build RouteResponse
+    # [5] Build RouteResponse
     route_id = f"route-{uuid.uuid4().hex[:10]}"
     origin = Location(
         latitude=request.current_lat,
@@ -121,7 +142,7 @@ async def reroute(
 
 
 # ---------------------------------------------------------------------------
-# Pipeline step wrappers (isolate external dependencies for testability)
+# Pipeline step wrappers (isolate external dependencies for test mocking)
 # ---------------------------------------------------------------------------
 
 async def _call_tmap(
@@ -131,7 +152,7 @@ async def _call_tmap(
     dest_lng: float,
     dest_name: str,
 ):
-    """Call Tmap pedestrian route API. Wraps tmap_service for mockability."""
+    """Call Tmap pedestrian route API."""
     from tmap_service import request_pedestrian_route
 
     return await request_pedestrian_route(
@@ -144,7 +165,7 @@ async def _call_tmap(
 
 
 def _extract_dps(tmap_result) -> list[DecisionPoint]:
-    """Extract DPs from Tmap result. Wraps dp_extractor."""
+    """Extract DPs from Tmap result."""
     from dp_extractor import extract_decision_points
 
     return extract_decision_points(tmap_result)
@@ -154,85 +175,10 @@ async def _insert_midpoints(
     dps: list[DecisionPoint],
     coordinates: list[tuple[float, float]],
 ) -> list[DecisionPoint]:
-    """Insert virtual DPs on long segments. Wraps midpoint_service."""
+    """Insert virtual DPs on long segments."""
     from midpoint_service import insert_midpoints
 
     return await insert_midpoints(dps, coordinates)
-
-
-def _generate_panorama(dps: list[DecisionPoint]) -> list[DecisionPoint]:
-    """Generate panorama request data. Wraps panorama_service."""
-    from panorama_service import generate_panorama_requests
-
-    return generate_panorama_requests(dps)
-
-
-# ---------------------------------------------------------------------------
-# STEP 6: Guidance generation for rerouted DPs
-# ---------------------------------------------------------------------------
-
-
-def _generate_guidance_for_dps(
-    decision_points: list[DecisionPoint],
-    dest_name: str = "",
-    skip_dp_ids: set[str] | None = None,
-) -> None:
-    """Replace Tmap placeholder guidance with proper Korean guidance.
-
-    Uses guidance_generator for non-VIRTUAL DPs. VIRTUAL DPs already have
-    guidance from midpoint_service. Cache-reused DPs (in skip_dp_ids) are
-    skipped. Operates in-place.
-    """
-    from constants import TURN_TYPE_TO_ACTION
-    from guidance_generator import generate_guidance
-
-    _skip = skip_dp_ids or set()
-    prev_landmark_name: str | None = None
-    for i, dp in enumerate(decision_points):
-        if dp.dp_type == "VIRTUAL":
-            if dp.selected_landmark is not None:
-                prev_landmark_name = dp.selected_landmark.name
-            else:
-                prev_landmark_name = None
-            continue
-
-        if dp.dp_id in _skip:
-            # Cache-reused DP already has good guidance; track landmark for chain
-            if dp.selected_landmark is not None:
-                prev_landmark_name = dp.selected_landmark.name
-            else:
-                prev_landmark_name = None
-            continue
-
-        next_dp_distance: float | None = None
-        if i < len(decision_points) - 1:
-            next_dp_distance = (
-                decision_points[i + 1].distance_from_start
-                - dp.distance_from_start
-            )
-
-        next_action: str | None = None
-        if dp.dp_type == "DEPARTURE" and i < len(decision_points) - 1:
-            next_tt = decision_points[i + 1].turn_type
-            if next_tt is not None:
-                next_action = TURN_TYPE_TO_ACTION.get(next_tt)
-
-        dp.guidance = generate_guidance(
-            dp_type=dp.dp_type,
-            turn_type=dp.turn_type,
-            selected_landmark=None,
-            match_status=None,
-            environment_desc=None,
-            facility_visible=None,
-            prev_landmark_name=prev_landmark_name,
-            next_dp_distance=next_dp_distance,
-            dest_name=dest_name,
-            distance_from_start=dp.distance_from_start,
-            next_action=next_action,
-            tmap_description=dp.tmap_description,
-        )
-
-        prev_landmark_name = None
 
 
 # ---------------------------------------------------------------------------
@@ -244,7 +190,10 @@ def _apply_cache_reuse(
     previous_dps: list[DecisionPoint],
     reused_ids: set[str] | None = None,
 ) -> int:
-    """Reuse POI, panorama, and guidance from previous DPs within 30m with same type.
+    """Reuse landmark, panorama, and guidance from matching previous DPs.
+
+    A new DP is considered a match for a previous DP when their dp_type
+    matches and they are within _CACHE_REUSE_DISTANCE_M (30m).
 
     Args:
         new_dps: Decision points from the new route (mutated in place).
@@ -270,7 +219,6 @@ def _apply_cache_reuse(
                     new_dp.selected_landmark = prev_dp.selected_landmark
                 if prev_dp.panorama_request is not None:
                     new_dp.panorama_request = prev_dp.panorama_request
-                # Reuse guidance from previous route (already generated)
                 new_dp.guidance = prev_dp.guidance
                 if reused_ids is not None:
                     reused_ids.add(new_dp.dp_id)

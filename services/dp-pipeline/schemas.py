@@ -181,7 +181,6 @@ class DeviationResult(BaseModel):
     state: str  # DeviationState value
     distance_to_route_m: float
     duration_s: float = 0.0
-    trend: Optional[str] = None  # ContinuityTrend value
     message: Optional[str] = None
     should_reroute: bool = False
     gps_error: bool = False

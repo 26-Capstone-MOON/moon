@@ -164,49 +164,32 @@ VIRTUAL_DP_CANDIDATE_INTERVAL: float = 30.0  # candidate generation interval (20
 PRE_ALERT_DISTANCE: float = 30.0          # meters
 ARRIVAL_DISTANCE: float = 10.0            # meters
 
-# Deviation detection thresholds
-DEVIATION_DISTANCE_THRESHOLD: float = 20.0   # meters
-DEVIATION_SPEED_THRESHOLD: float = 15.0      # km/h
-DEVIATION_WARNING_SECONDS: float = 3.0
-DEVIATION_CONFIRMED_SECONDS: float = 5.0
+# ---------------------------------------------------------------------------
+# Deviation detection thresholds (Notion §9.2)
+# ---------------------------------------------------------------------------
 
-# Deviation thresholds (aliased names matching deviation_detect.md spec)
-DEVIATION_DISTANCE_THRESHOLD_M: float = 20.0
-SPEED_THRESHOLD_KMH: float = 15.0
-DEVIATION_WARNING_DURATION_S: float = 3.0
-DEVIATION_CONFIRM_DURATION_S: float = 5.0
-CONTINUITY_SAMPLE_COUNT: int = 3
-GPS_UPDATE_INTERVAL_S: float = 1.0
+DEVIATION_DISTANCE_THRESHOLD_M: float = 20.0   # meters — > 20m triggers SUSPECTED
+SPEED_THRESHOLD_KMH: float = 15.0              # km/h — instantaneous speed above this = GPS error
+WARNING_DURATION_S: float = 3.0                # seconds — SUSPECTED ≥ 3s → WARNING
+DEVIATED_DURATION_S: float = 7.0               # seconds — SUSPECTED > 7s → DEVIATED (reroute)
+GPS_UPDATE_INTERVAL_S: float = 1.0             # expected GPS sample period
 
 
 # ---------------------------------------------------------------------------
-# DeviationState — string constants
+# DeviationState — 4-state machine (Notion §3.1)
 # ---------------------------------------------------------------------------
 
 class DeviationState:
     NORMAL = "NORMAL"
     SUSPECTED = "SUSPECTED"
     WARNING = "WARNING"
-    CONFIRMING = "CONFIRMING"
     DEVIATED = "DEVIATED"
-    RETURNING = "RETURNING"
 
 
 # ---------------------------------------------------------------------------
-# ContinuityTrend — string constants
-# ---------------------------------------------------------------------------
-
-class ContinuityTrend:
-    DIVERGING = "DIVERGING"
-    CONVERGING = "CONVERGING"
-    IRREGULAR = "IRREGULAR"
-
-
-# ---------------------------------------------------------------------------
-# Deviation guidance messages (Korean)
+# Deviation guidance messages (Korean) (Notion §9.3)
 # ---------------------------------------------------------------------------
 
 DEVIATION_MSG_WARNING: str = "경로를 벗어난 것 같아요."
-DEVIATION_MSG_RETURNING: str = "다시 돌아오고 있어요. 잘 하고 있어요."
 DEVIATION_MSG_REROUTING: str = "경로를 다시 찾고 있어요. 잠시만요."
 DEVIATION_MSG_REROUTE_DONE: str = "새 경로를 찾았어요."
