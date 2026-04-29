@@ -34,8 +34,7 @@
 
 **Vertical move fallback order:**
 1. POI available → "Past GS25 on your left, stairs right away."
-2. No POI + Vision available → "At the end of the red wall, there are stairs."
-3. Neither → "There are stairs ahead. Go up the stairs."
+2. No POI → "There are stairs ahead. Go up the stairs."
 
 ---
 
@@ -128,13 +127,12 @@ Left/right: bearing-based, recorded in `position` field. Opposite-side NOT filte
 
 ---
 
-## Panorama + Vision (STEP 4)
+## Panorama (STEP 4)
 
 - Server generates `panoramaRequest` → client executes Naver Panorama API
 - All DPs (including Virtual DP): 3 directions (front + left + right)
 - turnType-based isPrimary: left turn→left, right turn→right, other→front
-- Vision validation: if turnType facility not visible in primary → distance-based fallback
-- Panorama/Vision results are used for guidance text enrichment, NOT for scoring
+- Panorama results are used for guidance text enrichment, NOT for scoring
 
 ---
 
@@ -151,18 +149,13 @@ Left/right: bearing-based, recorded in `position` field. Opposite-side NOT filte
   > 20m → deviation suspected
 
 [2. Duration]
-  < 3s → ignore / ≥ 3s → warning / ≥ 5s → continuity check
-
-[3. Continuity check] (d1, d2, d3)
-  d1 < d2 < d3 → confirmed → reroute
-  d1 > d2 > d3 → returning → wait
-  Irregular → keep monitoring
+  ≤ 3s → ignore / >3s ~ ≤7s → warning / >7s → deviated → reroute
 ```
 
 ### Key Thresholds
 - **20m**: absorbs GPS error (5~10m) while catching real deviation
 - **15km/h**: above pedestrian speed = GPS error
-- **3s/5s**: under 3s transient, over 5s intentional
+- **3s/7s**: under 3s transient, over 7s intentional
 
 ### Distance Calculation
 Haversine perpendicular distance to each LineString segment. Take minimum.
@@ -172,15 +165,15 @@ Haversine perpendicular distance to each LineString segment. Take minimum.
 | Value | Meaning |
 |---|---|
 | `ON_ROUTE` | Normal |
-| `DEVIATION_SUSPECTED` | >20m, <3s |
-| `DEVIATION_WARNING` | >20m, ≥3s |
-| `DEVIATION_CONFIRMED` | ≥5s + distance increasing |
+| `DEVIATION_SUSPECTED` | >20m, ≤3s |
+| `DEVIATION_WARNING` | >20m, >3s ~ ≤7s |
+| `DEVIATION_CONFIRMED` | >20m, >7s |
 | `RETURNING` | Distance decreasing |
 | `REROUTING` | Reroute in progress |
 | `ARRIVED` | Destination reached |
 
 ### Re-routing
-Tmap re-request (current GPS → destination) → re-run STEP 1~5 (reuse cached overlapping data). Response includes `isRerouted: true`, `previousRouteId`.
+Tmap re-request (current GPS → destination) → re-run STEP 1~6 (reuse cached overlapping data). Response includes `isRerouted: true`, `previousRouteId`.
 
 ### Return Detection
 Distance decreasing → wait → return within 20m → resume original route.
@@ -190,5 +183,5 @@ Distance decreasing → wait → return within 20m → resume original route.
 ## Fallback Rule
 Always have fallback guidance.
 - No landmark → distance-based instruction
-- No POI + no Vision → "There are stairs ahead."
+- No POI → "There are stairs ahead."
 - Never show empty guidance.
