@@ -45,7 +45,7 @@
   1. Generate candidate points at 20~50m intervals along the route
   2. POI search + scoring at each candidate
   3. Confirm only top-scoring candidates as Virtual DPs
-  4. Enforce minimum 100m spacing between confirmed VDPs
+  4. Enforce minimum 90m spacing between confirmed VDPs
 - `dpType: VIRTUAL`, `turnType: null`
 - Panorama: 3 directions (front + left + right), same as regular DPs
 
@@ -98,7 +98,7 @@ Same `category_group_code` count within 100m:
 D = 1 - d / MD
 ```
 - `d`: straight-line distance from DP to landmark (m)
-- `MD`: adaptive search radius from POI collection (30m / 50m / 75m / 100m)
+- `MD`: adaptive search radius from POI collection (30m / 50m / 75m)
 
 ### Scoring Example (3pm, search radius 100m)
 
@@ -121,7 +121,7 @@ D = 1 - d / MD
 ## POI Collection — Adaptive Radius
 
 ```
-Search at 50m → 0 results: 75m → 100m / 10+ results: 30m / 1~9: keep
+Search at 50m → 0 results: 75m / 20+ results: 30m / 1~19: keep
 ```
 
 Left/right: bearing-based, recorded in `position` field. Opposite-side NOT filtered.
