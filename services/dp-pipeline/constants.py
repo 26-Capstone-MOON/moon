@@ -154,11 +154,10 @@ UNIQUENESS_DEFAULT: float = 0.2  # 4+
 
 MAX_SEARCH_RADIUS: float = 100.0          # MD for D = 1 - d/MD (meters)
 DEFAULT_POI_RADIUS: float = 50.0          # initial POI search radius (meters)
-POI_RADIUS_EXPAND_1: float = 75.0         # first expansion
-POI_RADIUS_EXPAND_2: float = 100.0        # second expansion
-POI_RADIUS_SHRINK: float = 30.0           # shrink when 10+ results
+POI_RADIUS_EXPAND_1: float = 75.0         # expand when 0 results
+POI_RADIUS_SHRINK: float = 30.0           # shrink when 20+ results
 VIRTUAL_DP_THRESHOLD: float = 200.0       # insert virtual DP when gap > 200m
-VIRTUAL_DP_MIN_SPACING: float = 100.0     # minimum spacing between virtual DPs
+VIRTUAL_DP_MIN_SPACING: float = 90.0      # minimum spacing between virtual DPs
 VIRTUAL_DP_CANDIDATE_INTERVAL: float = 30.0  # candidate generation interval (20~50m)
 
 PRE_ALERT_DISTANCE: float = 30.0          # meters

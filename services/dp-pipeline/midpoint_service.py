@@ -311,19 +311,7 @@ def _greedy_select(
     start_distance: float,
     end_distance: float,
 ) -> list[_ScoredCandidate]:
-    """Greedily select candidates enforcing minimum spacing.
-
-    Candidates must be sorted by score descending before calling.
-
-    Args:
-        candidates: Scored candidates sorted by score desc.
-        min_spacing: Minimum distance between selected candidates and DPs.
-        start_distance: Distance of the preceding DP.
-        end_distance: Distance of the following DP.
-
-    Returns:
-        Selected candidates meeting spacing requirements.
-    """
+    """90m 최소 간격으로 후보 지점 선택"""
     selected: list[_ScoredCandidate] = []
 
     for cand in candidates:
@@ -333,7 +321,6 @@ def _greedy_select(
         if end_distance - cand.dist_from_start < min_spacing:
             continue
 
-        # Check spacing from already selected candidates
         too_close = any(
             abs(cand.dist_from_start - sel.dist_from_start) < min_spacing
             for sel in selected
@@ -357,7 +344,7 @@ async def insert_midpoints(
     For each qualifying gap:
     1. Generate candidates at 30m intervals along route segment.
     2. Search POIs at each candidate and score with (P × h × U) × D.
-    3. Greedily select top candidates with >= 100m spacing.
+    3. Greedily select top candidates with >= 90m spacing.
     4. If ALL candidates lack POIs, insert 1 geometric midpoint as fallback.
     5. Build SelectedLandmark, Korean guidance, and front-only panorama.
 

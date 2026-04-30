@@ -15,7 +15,6 @@ from constants import (
     DEFAULT_POI_RADIUS,
     MAX_SEARCH_RADIUS,
     POI_RADIUS_EXPAND_1,
-    POI_RADIUS_EXPAND_2,
     POI_RADIUS_SHRINK,
 )
 from geo import calculate_bearing, haversine
@@ -275,12 +274,7 @@ async def search_pois_for_dp(
                 client, lat, lon, int(POI_RADIUS_EXPAND_1),
             )
             candidate_radius = int(POI_RADIUS_EXPAND_1)
-        if len(all_docs) == 0:
-            all_docs = await _search_all_categories(
-                client, lat, lon, int(POI_RADIUS_EXPAND_2),
-            )
-            candidate_radius = int(POI_RADIUS_EXPAND_2)
-        elif len(all_docs) >= 10:
+        elif len(all_docs) >= 20:
             all_docs = await _search_all_categories(
                 client, lat, lon, int(POI_RADIUS_SHRINK),
             )
