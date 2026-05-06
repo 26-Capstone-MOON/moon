@@ -17,6 +17,9 @@ export interface WidgetState {
   next?: string;
   arrowType: ArrowType;
   progress: number; // 0-100
+  currentIndex?: number;
+  totalCount?: number;
+  dpTypes?: ArrowType[];
 }
 
 export const startWidget = (state: WidgetState): Promise<void> =>

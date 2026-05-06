@@ -89,6 +89,28 @@ class NavigationNotificationModule(reactContext: ReactApplicationContext) :
         if (params.hasKey(KEY_PROGRESS) && !params.isNull(KEY_PROGRESS)) {
             putExtra(NavigationForegroundService.EXTRA_PROGRESS, params.getInt(KEY_PROGRESS))
         }
+        if (params.hasKey(KEY_CURRENT_INDEX) && !params.isNull(KEY_CURRENT_INDEX)) {
+            putExtra(
+                NavigationForegroundService.EXTRA_CURRENT_INDEX,
+                params.getInt(KEY_CURRENT_INDEX),
+            )
+        }
+        if (params.hasKey(KEY_TOTAL_COUNT) && !params.isNull(KEY_TOTAL_COUNT)) {
+            putExtra(
+                NavigationForegroundService.EXTRA_TOTAL_COUNT,
+                params.getInt(KEY_TOTAL_COUNT),
+            )
+        }
+        if (params.hasKey(KEY_DP_TYPES) && !params.isNull(KEY_DP_TYPES)) {
+            val arr = params.getArray(KEY_DP_TYPES)
+            val list = ArrayList<String>()
+            if (arr != null) {
+                for (i in 0 until arr.size()) {
+                    arr.getString(i)?.let { list.add(it) }
+                }
+            }
+            putStringArrayListExtra(NavigationForegroundService.EXTRA_DP_TYPES, list)
+        }
     }
 
     private fun requestPostNotificationsPermissionIfNeeded() {
@@ -115,6 +137,9 @@ class NavigationNotificationModule(reactContext: ReactApplicationContext) :
         private const val KEY_NEXT = "next"
         private const val KEY_ARROW_TYPE = "arrowType"
         private const val KEY_PROGRESS = "progress"
+        private const val KEY_CURRENT_INDEX = "currentIndex"
+        private const val KEY_TOTAL_COUNT = "totalCount"
+        private const val KEY_DP_TYPES = "dpTypes"
 
         private const val ERR_START = "E_WIDGET_START"
         private const val ERR_UPDATE = "E_WIDGET_UPDATE"

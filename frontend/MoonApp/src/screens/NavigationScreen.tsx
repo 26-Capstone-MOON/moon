@@ -258,6 +258,8 @@ export default function NavigationScreen({ navigation, route }: Props) {
       ? Math.round((localIndex / (totalDPs - 1)) * 100)
       : 0;
 
+    const dpTypes = dpList.map(dp => dpTypeToArrowType(dp));
+
     // Deviation / rerouting / returning — override DP-based widget state
     if (navigationState === 'DEVIATION_WARNING' || navigationState === 'DEVIATION_CONFIRMED') {
       updateWidget({
@@ -266,6 +268,9 @@ export default function NavigationScreen({ navigation, route }: Props) {
         next: undefined,
         arrowType: 'warning',
         progress: progressPct,
+        currentIndex: localIndex,
+        totalCount: totalDPs,
+        dpTypes,
       }).catch(() => {});
       return;
     }
@@ -277,6 +282,9 @@ export default function NavigationScreen({ navigation, route }: Props) {
         next: undefined,
         arrowType: 'warning',
         progress: progressPct,
+        currentIndex: localIndex,
+        totalCount: totalDPs,
+        dpTypes,
       }).catch(() => {});
       return;
     }
@@ -288,18 +296,32 @@ export default function NavigationScreen({ navigation, route }: Props) {
         next: undefined,
         arrowType: 'straight',
         progress: progressPct,
+        currentIndex: localIndex,
+        totalCount: totalDPs,
+        dpTypes,
       }).catch(() => {});
       return;
     }
 
     const nextLandmarkName = nextDP?.selectedLandmark?.name;
     const fallbackLabel = getDpLabel(currentDP.dpType);
+    const arrowType = dpTypeToArrowType(currentDP);
+    console.log('[Widget] dpTypes:', dpTypes.slice(0, 5), '...total', dpTypes.length);
+    console.log('[Widget]', {
+      currentIndex: localIndex,
+      totalCount: totalDPs,
+      arrowType,
+      progress: progressPct,
+    });
     const state: WidgetState = {
       label: (currentDP.guidance as any)?.alertLabel ?? fallbackLabel,
       primary: currentDP.guidance?.primary ?? '',
       next: nextLandmarkName,
-      arrowType: dpTypeToArrowType(currentDP),
+      arrowType,
       progress: progressPct,
+      currentIndex: localIndex,
+      totalCount: totalDPs,
+      dpTypes,
     };
 
     if (!widgetStartedRef.current) {

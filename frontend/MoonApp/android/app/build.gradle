@@ -111,6 +111,9 @@ dependencies {
     // The version of react-native is set by the React Native Gradle Plugin
     implementation("com.facebook.react:react-android")
 
+    // Android 16 Live Update (NotificationCompat.ProgressStyle, setRequestPromotedOngoing)
+    // Requires androidx.core 1.16.0+. Pinned explicitly so RN/library transitive bumps don't drift.
+    implementation("androidx.core:core-ktx:1.17.0")
 
     if (hermesEnabled.toBoolean()) {
         implementation("com.facebook.react:hermes-android")

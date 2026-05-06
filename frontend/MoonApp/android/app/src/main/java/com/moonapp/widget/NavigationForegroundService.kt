@@ -3,17 +3,24 @@ package com.moonapp.widget
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Paint
 import android.os.Build
 import android.os.IBinder
 import android.util.Log
-import android.widget.RemoteViews
+import androidx.annotation.DrawableRes
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.app.ServiceCompat
+import androidx.core.content.ContextCompat
+import androidx.core.graphics.drawable.IconCompat
 import com.moonapp.R
 
 class NavigationForegroundService : Service() {
@@ -65,48 +72,226 @@ class NavigationForegroundService : Service() {
         next = intent.getStringExtra(EXTRA_NEXT) ?: DEFAULT_NEXT,
         arrowType = intent.getStringExtra(EXTRA_ARROW_TYPE) ?: DEFAULT_ARROW_TYPE,
         progress = intent.getIntExtra(EXTRA_PROGRESS, DEFAULT_PROGRESS),
+        currentIndex = intent.getIntExtra(EXTRA_CURRENT_INDEX, 0),
+        totalCount = intent.getIntExtra(EXTRA_TOTAL_COUNT, 0),
+        dpTypes = intent.getStringArrayListExtra(EXTRA_DP_TYPES)?.toList() ?: emptyList(),
     )
 
     private fun buildNotification(state: WidgetState): Notification {
-        val arrowRes = arrowResForType(state.arrowType)
-        val progressClamped = state.progress.coerceIn(0, 100)
-        val progressText = "$progressClamped%"
-
-        val expandedView = RemoteViews(packageName, R.layout.notification_navigation).apply {
-            setTextViewText(R.id.widget_label, state.label)
-            setTextViewText(R.id.widget_primary, state.primary)
-            setTextViewText(R.id.widget_next, state.next)
-            setTextViewText(R.id.widget_progress_text, progressText)
-            setImageViewResource(R.id.widget_arrow_icon, arrowRes)
-            applyProgressSegments(this, progressClamped)
-        }
-        val collapsedView = RemoteViews(packageName, R.layout.notification_navigation_collapsed).apply {
-            setTextViewText(R.id.widget_primary, state.primary)
-            setImageViewResource(R.id.widget_arrow_icon, arrowRes)
+        Log.d(
+            "NavWidget",
+            "idx=${state.currentIndex} total=${state.totalCount} arrow=${state.arrowType} pct=${state.progress}",
+        )
+        val pct = state.progress.coerceIn(0, 100)
+        val title = state.label.ifBlank { DEFAULT_LABEL }
+        val chipText = when (state.arrowType) {
+            ARROW_WARNING -> "재탐색 중"
+            ARROW_ARRIVED -> "도착"
+            else -> "$pct%"
         }
 
-        return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_arrow_right)
-            .setStyle(NotificationCompat.DecoratedCustomViewStyle())
-            .setCustomContentView(collapsedView)
-            .setCustomBigContentView(expandedView)
-            .setCustomHeadsUpContentView(expandedView)
+        val largeIconRes = when (state.arrowType) {
+            ARROW_WARNING -> R.drawable.ic_arrow_warning
+            ARROW_ARRIVED -> R.drawable.ic_arrow_arrived
+            else -> arrowResForType(state.arrowType)
+        }
+
+        val stopIntent = Intent(this, NavigationForegroundService::class.java).apply {
+            action = ACTION_STOP
+        }
+        val stopPending = PendingIntent.getService(
+            this,
+            0,
+            stopIntent,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
+
+        val builder = NotificationCompat.Builder(this, CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_notification_small)
+            .setLargeIcon(createLargeIconBitmap(largeIconRes))
+            .setContentTitle(title)
+            .setContentText(state.primary)
             .setOngoing(true)
-            .setAutoCancel(false)
             .setOnlyAlertOnce(true)
             .setShowWhen(false)
             .setCategory(NotificationCompat.CATEGORY_NAVIGATION)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-            .setPriority(NotificationCompat.PRIORITY_MAX)
-            .build()
+            .setRequestPromotedOngoing(true)
+            .setShortCriticalText(chipText)
+            .setStyle(buildProgressStyle(state, pct))
+            .addAction(
+                NotificationCompat.Action.Builder(0, "안내 종료", stopPending).build(),
+            )
+
+        if (state.next.isNotBlank()) {
+            builder.setSubText(state.next)
+        }
+
+        return builder.build()
     }
 
-    private fun applyProgressSegments(views: RemoteViews, progress: Int) {
-        val filled = (progress * PROGRESS_SEGMENT_IDS.size + 50) / 100
-        PROGRESS_SEGMENT_IDS.forEachIndexed { index, viewId ->
-            val drawable = if (index < filled) R.drawable.bg_progress_filled else R.drawable.bg_progress_empty
-            views.setInt(viewId, "setBackgroundResource", drawable)
+    private fun buildProgressStyle(state: WidgetState, pct: Int): NotificationCompat.ProgressStyle {
+        return when (state.arrowType) {
+            ARROW_WARNING -> NotificationCompat.ProgressStyle()
+                .setStyledByProgress(false)
+                .setProgressSegments(
+                    listOf(NotificationCompat.ProgressStyle.Segment(100).setColor(PALE_BLUE)),
+                )
+                .setProgressTrackerIcon(buildTrackerIcon(state.arrowType))
+                .setProgress(50)
+
+            ARROW_ARRIVED -> NotificationCompat.ProgressStyle()
+                .setStyledByProgress(false)
+                .setProgressSegments(
+                    listOf(NotificationCompat.ProgressStyle.Segment(100).setColor(MIDNIGHT_BLUE)),
+                )
+                .setProgressEndIcon(
+                    IconCompat.createWithResource(this, R.drawable.ic_arrow_arrived),
+                )
+                .setProgress(100)
+
+            else -> {
+                val segments = if (state.totalCount > 1) {
+                    buildDpSegments(state.currentIndex, state.totalCount, state.dpTypes)
+                } else {
+                    when {
+                        pct == 0 -> listOf(
+                            NotificationCompat.ProgressStyle.Segment(100).setColor(PALE_BLUE),
+                        )
+                        pct == 100 -> listOf(
+                            NotificationCompat.ProgressStyle.Segment(100).setColor(MIDNIGHT_BLUE),
+                        )
+                        else -> listOf(
+                            NotificationCompat.ProgressStyle.Segment(pct).setColor(MIDNIGHT_BLUE),
+                            NotificationCompat.ProgressStyle.Segment(100 - pct).setColor(PALE_BLUE),
+                        )
+                    }
+                }
+                NotificationCompat.ProgressStyle()
+                    .setStyledByProgress(false)
+                    .setProgressSegments(segments)
+                    .setProgressTrackerIcon(buildTrackerIcon(state.arrowType))
+                    .setProgress(pct)
+            }
         }
+    }
+
+    private data class DpGroup(val type: String, val count: Int, val startIdx: Int)
+
+    private fun groupDpTypes(dpTypes: List<String>): List<DpGroup> {
+        val groups = mutableListOf<DpGroup>()
+        var i = 0
+        while (i < dpTypes.size) {
+            val type = dpTypes[i]
+            var j = i
+            while (j < dpTypes.size && dpTypes[j] == type) j++
+            groups.add(DpGroup(type, j - i, i))
+            i = j
+        }
+        return groups
+    }
+
+    private fun colorForGroup(group: DpGroup, currentIndex: Int): Int {
+        val groupEnd = group.startIdx + group.count
+        val isCurrent = currentIndex in group.startIdx until groupEnd
+        val isCompleted = groupEnd <= currentIndex
+
+        return when {
+            isCurrent -> ACCENT_GOLD
+            isCompleted -> when (group.type) {
+                ARROW_LEFT, ARROW_RIGHT -> GOLD
+                ARROW_CROSSWALK -> MINT
+                ARROW_VERTICAL -> BROWN
+                ARROW_ARRIVED -> CORAL
+                ARROW_STRAIGHT -> {
+                    // 긴 직진 그룹 인접 시각 분리: 그룹 시작 인덱스 짝홀로 미세 변형
+                    if (group.startIdx % 2 == 0) MIDNIGHT_BLUE else MIDNIGHT_BLUE_LIGHT
+                }
+                else -> MIDNIGHT_BLUE
+            }
+            else -> {
+                // 남은 그룹: 연한 톤 (타입 구분 미미)
+                if (group.startIdx % 2 == 0) PALE_BLUE else PALE_BLUE_DARK
+            }
+        }
+    }
+
+    private fun buildDpSegments(
+        currentIndex: Int,
+        totalCount: Int,
+        dpTypes: List<String>,
+    ): List<NotificationCompat.ProgressStyle.Segment> {
+        if (dpTypes.isEmpty() || dpTypes.size != totalCount) {
+            // fallback: 단일 segment (정보 없음)
+            return listOf(
+                NotificationCompat.ProgressStyle.Segment(100).setColor(MIDNIGHT_BLUE),
+            )
+        }
+
+        val safeTotal = totalCount.coerceAtLeast(1)
+        val groups = groupDpTypes(dpTypes)
+
+        // 길이 = (그룹 DP 수 / 전체) * 100, 마지막 그룹에 remainder 흡수
+        val baseLengths = groups.map { (it.count * 100) / safeTotal }
+        val sumBase = baseLengths.sum()
+        val lengths = baseLengths.toMutableList()
+        if (lengths.isNotEmpty()) {
+            lengths[lengths.size - 1] = lengths.last() + (100 - sumBase)
+        }
+
+        Log.d(
+            "NavWidget",
+            "buildStyle: idx=$currentIndex total=$totalCount dpTypesSize=${dpTypes.size} " +
+                "groupCount=${groups.size} groups=${groups.joinToString { "${it.type}x${it.count}" }}",
+        )
+
+        return groups.mapIndexed { idx, group ->
+            val length = lengths[idx].coerceAtLeast(1)
+            NotificationCompat.ProgressStyle.Segment(length)
+                .setColor(colorForGroup(group, currentIndex))
+        }
+    }
+
+    private fun buildTrackerIcon(arrowType: String): IconCompat {
+        val size = 96
+        val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+
+        // 흰색 외곽 링 (segment에서 떠 있는 느낌)
+        val ringPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.WHITE
+            style = Paint.Style.FILL
+        }
+        canvas.drawCircle(size / 2f, size / 2f, size / 2f, ringPaint)
+
+        // 안쪽 어두운 남색 원
+        val innerPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = MIDNIGHT_BLUE
+            style = Paint.Style.FILL
+        }
+        canvas.drawCircle(size / 2f, size / 2f, size / 2f - 6f, innerPaint)
+
+        // 가운데 흰색 픽토그램
+        val arrowDrawable = ContextCompat.getDrawable(this, arrowResForType(arrowType))!!.mutate()
+        arrowDrawable.setTint(Color.WHITE)
+        val padding = size / 4
+        arrowDrawable.setBounds(padding, padding, size - padding, size - padding)
+        arrowDrawable.draw(canvas)
+
+        return IconCompat.createWithBitmap(bitmap)
+    }
+
+    private fun createLargeIconBitmap(@DrawableRes resId: Int): Bitmap {
+        val size = 192
+        val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+
+        val drawable = ContextCompat.getDrawable(this, resId)!!.mutate()
+        drawable.setTint(MIDNIGHT_BLUE)
+        drawable.setBounds(0, 0, size, size)
+        drawable.draw(canvas)
+
+        return bitmap
     }
 
     private fun arrowResForType(type: String): Int = when (type) {
@@ -123,14 +308,12 @@ class NavigationForegroundService : Service() {
     private fun ensureChannel(context: Context) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        // Recreate so updated bypassDnd / importance settings apply.
-        manager.deleteNotificationChannel(CHANNEL_ID)
-        // IMPORTANCE_LOW: status bar에는 표시되지만 heads-up 팝업은 뜨지 않음.
-        // 잠금화면/알림 패널 표시 + Foreground Service 유지에는 영향 없음.
+        // Lazy 생성: 채널 promote 자격 리셋 방지 + 사용자 커스터마이즈 보존.
+        if (manager.getNotificationChannel(CHANNEL_ID) != null) return
         val channel = NotificationChannel(
             CHANNEL_ID,
             CHANNEL_NAME,
-            NotificationManager.IMPORTANCE_LOW,
+            NotificationManager.IMPORTANCE_DEFAULT,
         ).apply {
             description = "경로 안내 잠금화면 위젯"
             setShowBadge(false)
@@ -146,6 +329,9 @@ class NavigationForegroundService : Service() {
         val next: String,
         val arrowType: String,
         val progress: Int,
+        val currentIndex: Int,
+        val totalCount: Int,
+        val dpTypes: List<String> = emptyList(),
     )
 
     companion object {
@@ -160,6 +346,9 @@ class NavigationForegroundService : Service() {
         const val EXTRA_NEXT = "extra_next"
         const val EXTRA_PROGRESS = "extra_progress"
         const val EXTRA_ARROW_TYPE = "extra_arrow_type"
+        const val EXTRA_CURRENT_INDEX = "extra_current_index"
+        const val EXTRA_TOTAL_COUNT = "extra_total_count"
+        const val EXTRA_DP_TYPES = "extra_dp_types"
 
         const val ARROW_LEFT = "left"
         const val ARROW_RIGHT = "right"
@@ -179,18 +368,14 @@ class NavigationForegroundService : Service() {
         private const val DEFAULT_PROGRESS = 36
         private const val DEFAULT_ARROW_TYPE = ARROW_RIGHT
 
-        private val PROGRESS_SEGMENT_IDS = intArrayOf(
-            R.id.widget_progress_seg_0,
-            R.id.widget_progress_seg_1,
-            R.id.widget_progress_seg_2,
-            R.id.widget_progress_seg_3,
-            R.id.widget_progress_seg_4,
-            R.id.widget_progress_seg_5,
-            R.id.widget_progress_seg_6,
-            R.id.widget_progress_seg_7,
-            R.id.widget_progress_seg_8,
-            R.id.widget_progress_seg_9,
-            R.id.widget_progress_seg_10,
-        )
+        private val MIDNIGHT_BLUE = Color.parseColor("#191970")         // 직진 (메인 남색)
+        private val MIDNIGHT_BLUE_LIGHT = Color.parseColor("#2D3A8C")   // 직진 변형 (살짝 밝음)
+        private val GOLD = Color.parseColor("#C9A86A")                  // 회전 (좌/우) — 보색 강조
+        private val MINT = Color.parseColor("#4ECDC4")                  // 횡단보도 — 시원한 안전 톤
+        private val BROWN = Color.parseColor("#B08968")                 // 수직이동 — 실내/계단 느낌
+        private val ACCENT_GOLD = Color.parseColor("#F4A261")           // 현재 강조 (따뜻한 골드)
+        private val CORAL = Color.parseColor("#E76F51")                 // 도착 (따뜻한 코랄)
+        private val PALE_BLUE = Color.parseColor("#C8CBE0")             // 남은 구간 (연한 회보라)
+        private val PALE_BLUE_DARK = Color.parseColor("#A0A4C8")        // 남은 변형 (어두운 회보라)
     }
 }
