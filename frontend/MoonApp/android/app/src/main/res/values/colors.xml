@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="widget_primary">#191970</color>
+    <color name="widget_icon_bg">#E8E8F5</color>
+    <color name="widget_text_primary">#1D1D1F</color>
+    <color name="widget_text_secondary">#6E6E73</color>
+    <color name="widget_text_tertiary">#8E8E93</color>
+    <color name="widget_divider">#14000000</color>
+    <color name="widget_progress_inactive">#D1D1D6</color>
+</resources>

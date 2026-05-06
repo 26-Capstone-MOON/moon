@@ -38,6 +38,13 @@ import type { RootStackParamList } from '../types/navigation';
 import { formatTime } from '../utils/formatTime';
 import { formatDistance } from '../utils/formatDistance';
 import { buildPanoramaHtml, getPrimaryPan } from '../utils/panoramaUtils';
+import {
+  startWidget,
+  updateWidget,
+  stopWidget,
+  dpTypeToArrowType,
+  type WidgetState,
+} from '../services/widgetService';
 import type { DecisionPoint, Location } from '../types/route';
 
 type Props = StackScreenProps<RootStackParamList, 'Navigation'>;
@@ -242,6 +249,74 @@ export default function NavigationScreen({ navigation, route }: Props) {
     }
   }, [localIndex, currentDP, isNavigating]);
 
+  // Widget lifecycle: start on first DP, update on DP change
+  const widgetStartedRef = useRef(false);
+  useEffect(() => {
+    if (!currentDP) { return; }
+    const totalDPs = dpList.length;
+    const progressPct = totalDPs > 1
+      ? Math.round((localIndex / (totalDPs - 1)) * 100)
+      : 0;
+
+    // Deviation / rerouting / returning — override DP-based widget state
+    if (navigationState === 'DEVIATION_WARNING' || navigationState === 'DEVIATION_CONFIRMED') {
+      updateWidget({
+        label: '경로 확인',
+        primary: '경로를 벗어난 것 같아요',
+        next: undefined,
+        arrowType: 'warning',
+        progress: progressPct,
+      }).catch(() => {});
+      return;
+    }
+
+    if (navigationState === 'REROUTING') {
+      updateWidget({
+        label: '경로 재탐색',
+        primary: '경로를 다시 찾고 있어요',
+        next: undefined,
+        arrowType: 'warning',
+        progress: progressPct,
+      }).catch(() => {});
+      return;
+    }
+
+    if (trigger === 'RETURN_DETECTED') {
+      updateWidget({
+        label: '복귀 중',
+        primary: '다시 돌아오고 있어요',
+        next: undefined,
+        arrowType: 'straight',
+        progress: progressPct,
+      }).catch(() => {});
+      return;
+    }
+
+    const nextLandmarkName = nextDP?.selectedLandmark?.name;
+    const fallbackLabel = getDpLabel(currentDP.dpType);
+    const state: WidgetState = {
+      label: (currentDP.guidance as any)?.alertLabel ?? fallbackLabel,
+      primary: currentDP.guidance?.primary ?? '',
+      next: nextLandmarkName,
+      arrowType: dpTypeToArrowType(currentDP),
+      progress: progressPct,
+    };
+
+    if (!widgetStartedRef.current) {
+      widgetStartedRef.current = true;
+      startWidget(state).catch(err => console.warn('startWidget failed', err));
+    } else {
+      updateWidget(state).catch(err => console.warn('updateWidget failed', err));
+    }
+  }, [currentDP, nextDP, localIndex, dpList.length, navigationState, trigger]);
+
+  // Stop widget on unmount
+  useEffect(() => {
+    return () => {
+      stopWidget().catch(err => console.warn('stopWidget failed', err));
+    };
+  }, []);
+
   // Mock 모드: 출발지 DP일 때 store에 ARRIVAL trigger 주입 → trigger-based TTS가 처리
   const hasFiredDeparture = useRef(false);
   useEffect(() => {
@@ -371,6 +446,7 @@ export default function NavigationScreen({ navigation, route }: Props) {
       if (timerRef.current) { clearTimeout(timerRef.current); }
       stopTracking();
       disconnect();
+      stopWidget().catch(err => console.warn('stopWidget failed', err));
     }
   }, [navigationState, stopTracking, disconnect]);
 
@@ -386,6 +462,7 @@ export default function NavigationScreen({ navigation, route }: Props) {
     ttsStop();
     stopTracking();
     disconnect();
+    stopWidget().catch(err => console.warn('stopWidget failed', err));
     useNavigationStore.getState().reset();
     useRouteStore.getState().reset();
     navigation.popToTop();
