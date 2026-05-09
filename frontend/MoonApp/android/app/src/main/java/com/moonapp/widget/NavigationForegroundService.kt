@@ -12,8 +12,12 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
+import android.graphics.Typeface
 import android.os.Build
 import android.os.IBinder
+import android.text.SpannableString
+import android.text.Spanned
+import android.text.style.StyleSpan
 import android.util.Log
 import androidx.annotation.DrawableRes
 import androidx.core.app.NotificationCompat
@@ -109,7 +113,7 @@ class NavigationForegroundService : Service() {
         val builder = NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification_small)
             .setLargeIcon(createLargeIconBitmap(largeIconRes))
-            .setContentTitle(title)
+            .setContentTitle(boldText(title))
             .setContentText(state.primary)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
@@ -137,7 +141,7 @@ class NavigationForegroundService : Service() {
                 .setProgressSegments(
                     listOf(NotificationCompat.ProgressStyle.Segment(100).setColor(PALE_BLUE)),
                 )
-                .setProgressTrackerIcon(buildTrackerIcon(state.arrowType))
+                .setProgressTrackerIcon(emojiToIcon(TRACKER_EMOJI))
                 .setProgress(50)
 
             ARROW_ARRIVED -> NotificationCompat.ProgressStyle()
@@ -170,7 +174,7 @@ class NavigationForegroundService : Service() {
                 NotificationCompat.ProgressStyle()
                     .setStyledByProgress(false)
                     .setProgressSegments(segments)
-                    .setProgressTrackerIcon(buildTrackerIcon(state.arrowType))
+                    .setProgressTrackerIcon(emojiToIcon(TRACKER_EMOJI))
                     .setProgress(pct)
             }
         }
@@ -252,6 +256,34 @@ class NavigationForegroundService : Service() {
         }
     }
 
+    private fun boldText(text: String): CharSequence {
+        val spannable = SpannableString(text)
+        spannable.setSpan(
+            StyleSpan(Typeface.BOLD),
+            0,
+            text.length,
+            Spanned.SPAN_EXCLUSIVE_EXCLUSIVE,
+        )
+        return spannable
+    }
+
+    private fun emojiToIcon(emoji: String, sizeDp: Int = 32): IconCompat {
+        val sizePx = (sizeDp * resources.displayMetrics.density).toInt()
+        val bitmap = Bitmap.createBitmap(
+            sizePx, sizePx, Bitmap.Config.ARGB_8888,
+        )
+        val canvas = Canvas(bitmap)
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            textSize = sizePx * 0.85f
+            textAlign = Paint.Align.CENTER
+        }
+        val fm = paint.fontMetrics
+        val y = sizePx / 2f - (fm.ascent + fm.descent) / 2f
+        canvas.drawText(emoji, sizePx / 2f, y, paint)
+        return IconCompat.createWithBitmap(bitmap)
+    }
+
+    // Step 10: 트래커는 이모지로 교체. 본 함수는 롤백 대비 보존.
     private fun buildTrackerIcon(arrowType: String): IconCompat {
         val size = 96
         val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
@@ -377,5 +409,8 @@ class NavigationForegroundService : Service() {
         private val CORAL = Color.parseColor("#E76F51")                 // 도착 (따뜻한 코랄)
         private val PALE_BLUE = Color.parseColor("#C8CBE0")             // 남은 구간 (연한 회보라)
         private val PALE_BLUE_DARK = Color.parseColor("#A0A4C8")        // 남은 변형 (어두운 회보라)
+
+        // 진행률 트래커 이모지 (Pixel API 36에서 Emoji 15.1 완전 지원 확인됨)
+        private const val TRACKER_EMOJI = "🚶🏻‍♂️‍➡️"
     }
 }
