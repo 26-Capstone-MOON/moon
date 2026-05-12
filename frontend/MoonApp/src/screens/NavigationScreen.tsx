@@ -61,15 +61,20 @@ const SNAP_MAX = 0.90;  // 90%
 const PANO_HEIGHT_MIN = 200;
 const PANO_HEIGHT_MAX = 260;
 
-function getDpIcon(dpType: string): string {
-  switch (dpType) {
-    case 'DIRECTION_CHANGE': return 'arrow-forward';
-    case 'CROSSWALK': return 'walk-outline';
-    case 'VIRTUAL': return 'arrow-up';
-    case 'ARRIVAL': return 'flag';
-    case 'VERTICAL_MOVE': return 'swap-vertical-outline';
-    case 'DEPARTURE': return 'navigate-outline';
-    default: return 'navigate-outline';
+// Header icon: routed through the same arrow-type classifier as the lock-screen
+// widget (see widgetService.dpTypeToArrowType) so that LEFT/RIGHT/U turns,
+// crosswalks, vertical moves, and straight segments stay visually consistent
+// between the in-app header and the background widget.
+function getDpIcon(dp: DecisionPoint): string {
+  switch (dpTypeToArrowType(dp)) {
+    case 'left': return 'arrow-back';
+    case 'right': return 'arrow-forward';
+    case 'crosswalk': return 'walk-outline';
+    case 'vertical_move': return 'swap-vertical-outline';
+    case 'arrived': return 'flag';
+    case 'warning': return 'warning';
+    case 'straight':
+    default: return 'arrow-up';
   }
 }
 
@@ -594,7 +599,7 @@ export default function NavigationScreen({ navigation, route }: Props) {
             </TouchableOpacity>
             <View style={styles.topCenter}>
               <View style={styles.dpIconWrap}>
-                <Icon name={getDpIcon(currentDP.dpType)} size={20} color="#FFFFFF" />
+                <Icon name={getDpIcon(currentDP)} size={20} color="#FFFFFF" />
               </View>
               <Text style={styles.topLabel}>{getDpLabel(currentDP.dpType)}</Text>
             </View>

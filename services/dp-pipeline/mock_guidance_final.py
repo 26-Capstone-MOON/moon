@@ -127,18 +127,18 @@ MOCK_GUIDANCES: list[dict] = [
         "pre_alert": "[GS칼텍스 보이면 좌회전 준비 사전 알림]",
         "action": "LEFT_TURN",
     },
-    # DP6: VIRTUAL — 테이블나인 (pipeline DP4 위치를 overwrite)
+    # DP6: DIRECTION_CHANGE — 테이블나인에서 좌측 방향 (pipeline DP4 위치를 overwrite)
     {
-        "dp_type": "VIRTUAL",
+        "dp_type": "DIRECTION_CHANGE",
         "landmark_name": "테이블나인",
         "landmark_lat": 37.502967,
         "landmark_lng": 127.023442,
         "dp_marker_lat": 37.502911,
         "dp_marker_lng": 127.023368,
         "pan_override": 54.5,
-        "primary": "[테이블나인 지나가는 중 - 잘 가고 있다는 확인 안내]",
-        "pre_alert": None,
-        "action": None,
+        "primary": "[테이블나인에서 좌측으로 안내]",
+        "pre_alert": "[테이블나인 보이면 좌측 준비 사전 알림]",
+        "action": "LEFT_TURN",
     },
     # DP7: ARRIVAL (pipeline 5)
     {
@@ -261,6 +261,16 @@ def _overwrite_guidance(
     for i, mock in enumerate(mocks):
         if i >= len(dps):
             break
+        # Mock의 dp_type이 명시되어 있으면 함께 overwrite.
+        # 프론트는 dp_type을 헤더 라벨링 등에 쓰므로 일관성 필요.
+        mock_dp_type = mock.get("dp_type")
+        if mock_dp_type and dps[i].dp_type != mock_dp_type:
+            logger.info(
+                "[MOCK_FINAL] DP%d dp_type %s → %s (overwritten by mock)",
+                i, dps[i].dp_type, mock_dp_type,
+            )
+            dps[i].dp_type = mock_dp_type
+            dps[i].turn_type = None  # mock dp_type과 충돌 가능성 제거
         dps[i].guidance = Guidance(
             primary=mock["primary"],
             pre_alert=mock.get("pre_alert"),
