@@ -1054,7 +1054,13 @@ async def chat_endpoint(request: ConversationRequest) -> ApiResponse:
     if route is None:
         raise HTTPException(status_code=404, detail="Route not found")
 
-    result = await conversation_chat(request, route)
+    # 클라이언트가 명시적으로 보낸 completed_dp_ids 우선,
+    # 없으면 WebSocket /tracking이 누적해 둔 서버 캐시 폴백
+    if request.completed_dp_ids is not None:
+        completed = set(request.completed_dp_ids)
+    else:
+        completed = _completed_dps.get(request.route_id)
+    result = await conversation_chat(request, route, completed)
     return ApiResponse(data=result)
 
 

@@ -87,8 +87,7 @@ const MOCK_REROUTE_RESPONSE = {
 };
 
 const MOCK_CONVERSATION_RESPONSE = {
-  message: '현재 GS25 편의점을 지나 직진 중이에요. 약 200m 앞에서 우회전하시면 됩니다. 주변에 스타벅스가 보이면 올바른 길이에요.',
-  guidanceUpdated: false,
+  answer: '현재 GS25 편의점을 지나 직진 중이에요. 곧 오른쪽에 스타벅스가 보이면 잘 가고 있는 거예요.',
 };
 
 // --- API Functions ---
@@ -141,9 +140,9 @@ export async function requestReroute(
 
 export async function sendConversation(
   routeId: string,
-  message: string,
-  context?: { currentDpId: string; navigationState: string },
-): Promise<{ message: string; guidanceUpdated: boolean }> {
+  question: string,
+  options?: { currentDpId?: string; completedDpIds?: string[] },
+): Promise<{ answer: string }> {
   if (USE_MOCK) {
     return MOCK_CONVERSATION_RESPONSE;
   }
@@ -151,10 +150,14 @@ export async function sendConversation(
   const res = await fetch(`${BASE_URL}/route/${routeId}/conversation`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ message, context }),
+    body: JSON.stringify({
+      question,
+      currentDpId: options?.currentDpId,
+      completedDpIds: options?.completedDpIds,
+    }),
   });
 
-  const json: ApiResponse<{ message: string; guidanceUpdated: boolean }> = toCamelCase(await res.json());
+  const json: ApiResponse<{ answer: string }> = toCamelCase(await res.json());
 
   if (json.status === 'ERROR') {
     throw new Error(json.error?.message ?? '대화 요청 실패');

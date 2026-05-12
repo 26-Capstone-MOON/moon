@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Optional, Union
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 # ---------------------------------------------------------------------------
@@ -146,9 +146,18 @@ class Progress(BaseModel):
 # ---------------------------------------------------------------------------
 
 class ConversationRequest(BaseModel):
+    """대화형 답변 요청.
+
+    Spring Boot가 raw JSON을 그대로 전달하므로 RN의 camelCase 키를
+    그대로 받기 위해 alias 사용. populate_by_name=True 덕분에 내부 코드/테스트는
+    snake_case 키워드로 그대로 생성 가능.
+    """
+    model_config = ConfigDict(populate_by_name=True)
+
     question: str
-    route_id: str
-    current_dp_id: Optional[str] = None
+    route_id: str = Field(alias="routeId")
+    current_dp_id: Optional[str] = Field(default=None, alias="currentDpId")
+    completed_dp_ids: Optional[list[str]] = Field(default=None, alias="completedDpIds")
 
 
 class ConversationResponse(BaseModel):
