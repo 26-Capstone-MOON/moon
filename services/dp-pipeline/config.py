@@ -36,3 +36,8 @@ settings = Settings()
 # Mock guidance toggle — overwrite pipeline guidance with hand-crafted demo text
 # ---------------------------------------------------------------------------
 MOCK_GUIDANCE = True
+
+# ---------------------------------------------------------------------------
+# OSM Overpass API (no key required, public endpoint)
+# ---------------------------------------------------------------------------
+OVERPASS_ENDPOINT = "https://overpass-api.de/api/interpreter"
