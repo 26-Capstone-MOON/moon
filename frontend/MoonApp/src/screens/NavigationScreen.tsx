@@ -407,15 +407,22 @@ export default function NavigationScreen({ navigation, route }: Props) {
     }
   }, [trigger, guidance, currentDpId, ttsEnabled, isRerouting]);
 
-  // Sync localIndex from server's currentDpId
+  // Sync localIndex from server's currentDpId.
+  // Card advance (idx > localIndex) only fires on ARRIVAL/CONFIRMATION trigger.
+  // PRE_ALERT plays TTS only — does NOT switch the card.
+  // Backward sync (idx < localIndex) always allowed for reroute / rewind cases.
   useEffect(() => {
     if (!currentDpId || connectionState !== 'CONNECTED') { return; }
     const idx = dpList.findIndex(dp => dp.dpId === currentDpId);
-    if (idx >= 0 && idx !== localIndex) {
-      console.log('[NAV] 서버 DP 동기화:', currentDpId, '/ index:', idx);
+    if (idx < 0) { return; }
+    if (idx > localIndex && trigger !== 'ARRIVAL' && trigger !== 'CONFIRMATION') {
+      return;
+    }
+    if (idx !== localIndex) {
+      console.log('[NAV] 서버 DP 동기화:', currentDpId, '/ index:', idx, '/ trigger:', trigger);
       setLocalIndex(idx);
     }
-  }, [currentDpId, dpList, connectionState, localIndex]);
+  }, [currentDpId, trigger, dpList, connectionState, localIndex]);
 
   // Auto-progress mock — only when WebSocket is NOT connected
   useEffect(() => {
@@ -471,6 +478,19 @@ export default function NavigationScreen({ navigation, route }: Props) {
       stopWidget().catch(err => console.warn('stopWidget failed', err));
     }
   }, [navigationState, stopTracking, disconnect]);
+
+  // Delay arrived overlay so user can read the final DP card (~5s).
+  // The card stays visible during the delay; cleanup above runs immediately.
+  const [showArrivedOverlay, setShowArrivedOverlay] = useState(false);
+  useEffect(() => {
+    const arrived = (isLastDP && currentDP?.dpType === 'ARRIVAL') || navigationState === 'ARRIVED';
+    if (!arrived) {
+      setShowArrivedOverlay(false);
+      return;
+    }
+    const t = setTimeout(() => setShowArrivedOverlay(true), 5000);
+    return () => clearTimeout(t);
+  }, [isLastDP, currentDP, navigationState]);
 
   // Reroute is handled by WebSocket server (TrackingWebSocketHandler)
   // — no REST call needed from frontend. The reroute response arrives
@@ -559,7 +579,7 @@ export default function NavigationScreen({ navigation, route }: Props) {
   const cameraLat = position?.latitude ?? currentDP.location.latitude;
   const cameraLng = position?.longitude ?? currentDP.location.longitude;
   const cameraProps = isFollowing ? {
-    camera: { latitude: cameraLat, longitude: cameraLng, zoom: 16 },
+    camera: { latitude: cameraLat, longitude: cameraLng, zoom: 17 },
   } : {};
 
   return (
@@ -762,8 +782,8 @@ export default function NavigationScreen({ navigation, route }: Props) {
             </BottomSheetScrollView>
           </BottomSheet>
 
-          {/* Arrived overlay */}
-          {((isLastDP && currentDP.dpType === 'ARRIVAL') || navigationState === 'ARRIVED') && (
+          {/* Arrived overlay (delayed 5s so user can see the final DP card first) */}
+          {showArrivedOverlay && (
             <View style={styles.arrivedOverlay}>
               <View style={styles.arrivedCard}>
                 <View style={styles.arrivedIconWrap}>

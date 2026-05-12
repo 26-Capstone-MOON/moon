@@ -753,6 +753,12 @@ async def route_create(request: RouteRequest) -> ApiResponse:
             route_response.origin,
             route_response.destination,
         )
+        from mock_guidance_final import apply_mock_guidance as apply_mock_guidance_final
+        route_response = apply_mock_guidance_final(
+            route_response,
+            route_response.origin,
+            route_response.destination,
+        )
 
     # Generate Google Cloud TTS audio for all guidance texts
     route_response = await _attach_tts_audio(route_response)
@@ -846,12 +852,9 @@ def _find_current_dp(
     for dp in route.decision_points[:-1]:
         if dp.dp_id in completed:
             continue
-        # First uncompleted DP — check if passed
-        # Both conditions required to prevent projection overshoot:
-        #   1) user_dfs exceeded dp's distance_from_start
-        #   2) haversine distance is within 50m (was actually near the DP)
+        # Complete only when within ARRIVAL_DISTANCE (10m) — same threshold as ARRIVAL trigger
         dp_haver = haversine(lat, lng, dp.location.latitude, dp.location.longitude)
-        if user_dfs > dp.distance_from_start and dp_haver < 20.0:
+        if user_dfs > dp.distance_from_start and dp_haver <= ARRIVAL_DISTANCE:
             completed.add(dp.dp_id)
             just_passed = dp
         break  # only check one DP per call
@@ -917,17 +920,28 @@ def _deviation_result_to_response(
         dp, dist, idx, just_passed = _find_current_dp(
             lat, lng, route, route_id, user_dfs,
         )
-        current_dp_id = dp.dp_id
-        distance_to_dp = dist
+        # When a DP was just passed in this tick, keep current_dp_id pointing at
+        # the just-passed DP so the ARRIVAL trigger and currentDpId stay 1:1
+        # aligned. The next tick will advance current_dp_id to the next DP.
+        if just_passed is not None:
+            current_dp_id = just_passed.dp_id
+            distance_to_dp = haversine(
+                lat, lng,
+                just_passed.location.latitude, just_passed.location.longitude,
+            )
+        else:
+            current_dp_id = dp.dp_id
+            distance_to_dp = dist
 
         print(f"[DP-DEBUG] gps=({lat:.6f},{lng:.6f}), user_dfs={user_dfs:.1f}, "
-              f"current_dp={current_dp_id}, dp_dfs={dp.distance_from_start:.1f}, "
-              f"haversine={dist:.1f}, just_passed={just_passed.dp_id if just_passed else None}")
+              f"current_dp={current_dp_id}, next_dp={dp.dp_id}, "
+              f"dp_dfs={dp.distance_from_start:.1f}, haversine={dist:.1f}, "
+              f"just_passed={just_passed.dp_id if just_passed else None}")
 
         # Check destination arrival first
         dest = route.decision_points[-1]
         dest_dist = haversine(lat, lng, dest.location.latitude, dest.location.longitude)
-        if dest_dist <= ARRIVAL_DISTANCE or (user_dfs >= dest.distance_from_start and dest_dist < 20.0):
+        if dest_dist <= ARRIVAL_DISTANCE:
             navigation_state = "ARRIVED"
             trigger = "ARRIVAL"
             guidance = Guidance(
