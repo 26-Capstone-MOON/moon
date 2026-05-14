@@ -36,14 +36,14 @@ DEMO_ROUTE_DEST   = (37.502550, 127.024091)   # 스타벅스 강남에비뉴점
 
 _MATCH_THRESHOLD_M = 100.0  # origin/dest must be within 100m to apply mock
 
-# Pipeline produces 6 DPs for this route; mock has 8 entries.
-# 2 extra DPs (mock_index 4=VIRTUAL, 5=DIRECTION_CHANGE) are inserted between
-# pipeline DP3 and DP4 to match.
-_EXPECTED_PIPELINE_DP_COUNT = 6
+# Pipeline produces 6 DPs originally; we drop pipeline DP2 (아디다스) to get 5,
+# then insert 1 extra DP (GS칼텍스) to reach the 6 mock entries.
+_EXPECTED_PIPELINE_DP_COUNT = 5
 
 # ---------------------------------------------------------------------------
-# Mock guidance data — 8 DPs in order
-# Pipeline produces 6 DPs. 2 extra DPs are inserted at mock_index 4 and 6.
+# Mock guidance data — 6 DPs in order
+# Pipeline (after 아디다스 제거) produces 5 DPs. 1 extra DP (GS칼텍스) is
+# inserted at mock_index 3.
 # Each entry: (dp_type, landmark_name, primary, pre_alert, action)
 #   dp_type is for reference/logging only; matching is purely by order.
 # ---------------------------------------------------------------------------
@@ -75,20 +75,7 @@ MOCK_GUIDANCES: list[dict] = [
         "pre_alert": "[횡단보도 곧 나옴 사전 알림]",
         "action": "CROSSWALK",
     },
-    # DP2: DIRECTION_CHANGE (pipeline 2)
-    {
-        "dp_type": "DIRECTION_CHANGE",
-        "landmark_name": "아디다스 강남브랜드센터",
-        "landmark_lat": 37.504316,
-        "landmark_lng": 127.025043,
-        "dp_marker_lat": 37.504442,
-        "dp_marker_lng": 127.024970,
-        "pan_override": 172.0,
-        "primary": "[아디다스 강남브랜드센터에서 우회전 안내]",
-        "pre_alert": "[아디다스 보이면 우회전 준비 사전 알림]",
-        "action": "RIGHT_TURN",
-    },
-    # DP3: CROSSWALK (pipeline 3)
+    # DP2: CROSSWALK (pipeline 2, was pipeline 3 before 아디다스 제거)
     {
         "dp_type": "CROSSWALK",
         "landmark_name": "교보타워 방향 횡단보도",
@@ -101,20 +88,7 @@ MOCK_GUIDANCES: list[dict] = [
         "pre_alert": "[횡단보도 곧 나옴 사전 알림]",
         "action": "CROSSWALK",
     },
-    # DP4: VIRTUAL — 삽입 (pipeline DP3과 DP4 사이)
-    {
-        "dp_type": "VIRTUAL",
-        "landmark_name": "교보타워",
-        "landmark_lat": 37.503721,
-        "landmark_lng": 127.024097,
-        "dp_marker_lat": 37.504082,
-        "dp_marker_lng": 127.023949,
-        "pan_override": None,
-        "primary": "[교보타워 지나가는 중 - 잘 가고 있다는 확인 안내]",
-        "pre_alert": None,
-        "action": None,
-    },
-    # DP5: DIRECTION_CHANGE (pipeline 4)
+    # DP3: DIRECTION_CHANGE — 삽입 (pipeline DP2와 DP3 사이)
     {
         "dp_type": "DIRECTION_CHANGE",
         "landmark_name": "GS칼텍스 삼방주유소",
@@ -127,20 +101,20 @@ MOCK_GUIDANCES: list[dict] = [
         "pre_alert": "[GS칼텍스 보이면 좌회전 준비 사전 알림]",
         "action": "LEFT_TURN",
     },
-    # DP6: DIRECTION_CHANGE — 테이블나인에서 좌측 방향 (pipeline DP4 위치를 overwrite)
+    # DP4: CROSSWALK — 테이블나인 방향 횡단보도 (pipeline DP3 위치를 overwrite)
     {
-        "dp_type": "DIRECTION_CHANGE",
+        "dp_type": "CROSSWALK",
         "landmark_name": "테이블나인",
         "landmark_lat": 37.502967,
         "landmark_lng": 127.023442,
         "dp_marker_lat": 37.502911,
         "dp_marker_lng": 127.023368,
         "pan_override": 54.5,
-        "primary": "[테이블나인에서 좌측으로 안내]",
-        "pre_alert": "[테이블나인 보이면 좌측 준비 사전 알림]",
-        "action": "LEFT_TURN",
+        "primary": "[테이블나인 방면으로 횡단보도 건너기 안내]",
+        "pre_alert": "[횡단보도 곧 나옴 사전 알림]",
+        "action": "CROSSWALK",
     },
-    # DP7: ARRIVAL (pipeline 5)
+    # DP5: ARRIVAL (pipeline 4, was pipeline 5 before 아디다스 제거)
     {
         "dp_type": "ARRIVAL",
         "landmark_name": "스타벅스 강남에비뉴점",
@@ -162,21 +136,12 @@ MOCK_GUIDANCES: list[dict] = [
 # ---------------------------------------------------------------------------
 
 _EXTRA_INSERT_SPECS: list[dict] = [
-    # 교보타워 VIRTUAL — pipeline DP3과 DP4 사이에 삽입
+    # GS칼텍스 DIRECTION_CHANGE — pipeline DP2(교보타워 횡단보도)와 DP3(테이블나인) 사이에 삽입
     {
-        "mock_index": 4,
-        "dp_type": "VIRTUAL",
-        "before_pipeline": 3,
-        "after_pipeline": 4,
-        "fixed_lat": 37.504153,
-        "fixed_lng": 127.023998,
-    },
-    # GS칼텍스 DIRECTION_CHANGE — pipeline DP3과 DP4 사이에 삽입 (교보타워 다음)
-    {
-        "mock_index": 5,
+        "mock_index": 3,
         "dp_type": "DIRECTION_CHANGE",
-        "before_pipeline": 3,
-        "after_pipeline": 4,
+        "before_pipeline": 2,
+        "after_pipeline": 3,
         "fixed_lat": 37.503884,
         "fixed_lng": 127.023206,
     },
@@ -194,9 +159,9 @@ def apply_mock_guidance(
 ) -> RouteResponse:
     """Overwrite guidance with hand-crafted demo text if route matches.
 
-    Pipeline produces 6 DPs. Mock has 8 entries (6 pipeline + 2 inserted).
-    Inserts extra DPs at mock_index 4 and 6, then overwrites all guidance
-    with mock data.
+    Pipeline originally produces 6 DPs. We drop pipeline DP2 (아디다스) to
+    normalize to 5, insert 1 extra DP (GS칼텍스), and overwrite all guidance
+    to reach the 6 mock entries.
 
     Returns the (possibly mutated) RouteResponse.
     """
@@ -214,7 +179,14 @@ def apply_mock_guidance(
         n_pipeline, n_mock, _EXPECTED_PIPELINE_DP_COUNT, n_extra,
     )
 
-    # Expected: pipeline produces _EXPECTED_PIPELINE_DP_COUNT DPs, we insert n_extra to reach n_mock
+    # Pipeline 원본(6개)이면 index 2(아디다스) 제거하여 5개로 정규화
+    if n_pipeline == _EXPECTED_PIPELINE_DP_COUNT + 1:
+        del route_response.decision_points[2]
+        logger.info("[MOCK_FINAL] Removed pipeline DP at index 2 (아디다스 제거)")
+        dps = route_response.decision_points
+        n_pipeline = len(dps)
+
+    # 정규화된 케이스: 5개 → extra 1개 삽입 → 6개로 mock에 맞춤
     if n_pipeline == _EXPECTED_PIPELINE_DP_COUNT:
         _insert_extra_dps(route_response)
         _overwrite_guidance(route_response.decision_points, MOCK_GUIDANCES)
