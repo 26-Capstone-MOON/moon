@@ -32,6 +32,25 @@ _FALLBACK_ANSWER = "죄송해요, 지금 답변을 드리기 어렵습니다. �
 
 _POSITION_KO = {"LEFT": "왼쪽", "RIGHT": "오른쪽", "FRONT": "전방"}
 
+# 사용자가 랜드마크 외관/모습을 묻는 질문일 때 파노라마 표시 트리거
+_PANORAMA_KEYWORDS = (
+    "어떻게 생겼",
+    "외관",
+    "모양",
+    "모습",
+    "보여줘",
+    "보여 줘",
+    "어떤 건물",
+    "어떻게 보여",
+    "이 건물",
+    "저 건물",
+)
+
+
+def _should_show_panorama(question: str) -> bool:
+    """질문에 외관·모습 관련 키워드가 포함되어 있으면 파노라마 표시."""
+    return any(kw in question for kw in _PANORAMA_KEYWORDS)
+
 
 # ---------------------------------------------------------------------------
 # Progress label
@@ -118,6 +137,8 @@ def _render_dp_block(dp: DecisionPoint) -> str:
     lm_line = _render_landmark(dp)
     if lm_line:
         lines.append(f"- 랜드마크: {lm_line}")
+    if dp.selected_landmark and dp.selected_landmark.appearance:
+        lines.append(f"- 외관: {dp.selected_landmark.appearance}")
     return "\n".join(lines)
 
 
@@ -203,6 +224,8 @@ def _build_route_context(
         next_lines = ["[다음 구간]"]
         for dp in next_dps:
             next_lines.append(f"- {_render_dp_summary(dp)}")
+            if dp.selected_landmark and dp.selected_landmark.appearance:
+                next_lines.append(f"  외관: {dp.selected_landmark.appearance}")
         sections.append("\n".join(next_lines))
 
     return "\n\n".join(sections)
@@ -234,6 +257,12 @@ _SYSTEM_PROMPT_TEMPLATE = """\
 - 진행도 ("얼마나 남았어?", "거의 다 왔어?"): [진행 상황]의 "남은 시간" 값을 그대로 사용해 "약 N분 정도 남았어요" 형태로 답하세요. "곧 도착"이면 "거의 다 왔어요"로 표현합니다. DP 개수, N/M 카운트, 진행률 라벨은 답변에 포함하지 마세요
 - 지나온 길 / 회고 ("아까 어디 지났지?", "방금 어디 다녀왔어?"): [진행 상황] 완료 목록에서 `← 방금 지나온 곳` 마커가 붙은 항목을 찾아, 그 DP의 안내와 랜드마크를 자연어로 설명하세요. DEPARTURE라도 마커가 붙어 있으면 그 안내 내용을 활용해 답하세요. 완료 목록 자체가 아예 비어 있을 때만 "아직 출발 지점이에요"라고 답하세요
 - 주변 정보 ("근처에 뭐 있어?"): [현재 구간]의 랜드마크만 사용하세요. 없는 정보 추측 금지
+- 외관·모습 ("어떻게 생겼어?", "외관", "모양", "보여줘", "어떤 건물이야?"): [현재 구간] 또는 [다음 구간]의 "외관" 정보를 자연스러운 한국어로 풀어서 답하세요.
+  · 외관 정보를 그대로 복사하지 말고 자연스러운 문장으로 변형하세요
+  · 매번 표현을 다르게 (어휘 다양성)
+  · 1~2문장으로 짧게
+  · 추측하거나 상상으로 묘사하지 말 것 — 컨텍스트에 있는 외관 정보만 사용
+  · 외관 정보가 없으면 "잘 보이지 않아요" 정도로 답하세요
 - 경로 이탈 우려 ("길 잘못 든 것 같아"): "지금 위치 기준으로는 ..." 형태로 [현재 구간] 안내를 자연어로 재확인하세요
 
 [금지사항]
@@ -289,4 +318,11 @@ async def chat(
         logger.error("OpenAI API call failed: %s", exc)
         answer = _FALLBACK_ANSWER
 
-    return ConversationResponse(answer=answer)
+    show_panorama = _should_show_panorama(request.question)
+    target_dp_id = request.current_dp_id if show_panorama else None
+
+    return ConversationResponse(
+        answer=answer,
+        show_panorama=show_panorama,
+        target_dp_id=target_dp_id,
+    )

@@ -53,6 +53,7 @@ class SelectedLandmark(BaseModel):
     match_status: str  # MATCHED | POI_ONLY | VISION_ONLY
     is_open: bool = True
     location: Optional[Location] = None  # POI coordinates (from Kakao API)
+    appearance: Optional[str] = None  # Visual description for LLM context (Mode B chat)
 
 
 # ---------------------------------------------------------------------------
@@ -162,6 +163,8 @@ class ConversationRequest(BaseModel):
 
 class ConversationResponse(BaseModel):
     answer: str
+    show_panorama: bool = False
+    target_dp_id: Optional[str] = None
 
 
 # ---------------------------------------------------------------------------

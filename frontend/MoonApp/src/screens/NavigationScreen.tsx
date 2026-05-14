@@ -31,6 +31,7 @@ import CurrentLocationMarker from '../components/map/CurrentLocationMarker';
 import DeviationBanner from '../components/guide/DeviationBanner';
 import ErrorToast from '../components/common/ErrorToast';
 import LoadingOverlay from '../components/common/LoadingOverlay';
+import AssistantBottomSheet from '../components/chat/AssistantBottomSheet';
 // requestReroute import removed — reroute handled by WebSocket server
 import { toCamelCase } from '../utils/caseConverter';
 // extractErrorMessage import removed — no longer used after reroute cleanup
@@ -134,6 +135,11 @@ export default function NavigationScreen({ navigation, route }: Props) {
   const [panoReady, setPanoReady] = useState(false);
   const [panoEnabled, _setPanoEnabled] = useState(true);
   const [ttsEnabled, setTtsEnabled] = useState(true);
+  const [isAssistantOpen, setIsAssistantOpen] = useState(false);
+  const isAssistantOpenRef = useRef(false);
+  useEffect(() => {
+    isAssistantOpenRef.current = isAssistantOpen;
+  }, [isAssistantOpen]);
   const [isFollowing, setIsFollowing] = useState(true);
   const followTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -405,9 +411,11 @@ export default function NavigationScreen({ navigation, route }: Props) {
     if (text) {
       lastSpokenKey.current = spokenKey;
       console.log('[TTS] 재생:', text, audio ? '(Google TTS)' : '(device TTS)');
-      if (ttsEnabled) {
+      if (ttsEnabled && !isAssistantOpenRef.current) {
         ttsStop();
         ttsSpeak(text, audio);
+      } else if (isAssistantOpenRef.current) {
+        console.log('[TTS] 어시스턴트 열림 → 자동 안내 TTS 스킵');
       }
     }
   }, [trigger, guidance, currentDpId, ttsEnabled, isRerouting]);
@@ -768,7 +776,13 @@ export default function NavigationScreen({ navigation, route }: Props) {
                       {ttsEnabled ? '음성안내' : '음성끔'}
                     </Text>
                   </TouchableOpacity>
-                  <TouchableOpacity style={styles.btnFilled} activeOpacity={0.7}>
+                  <TouchableOpacity
+                    style={styles.btnFilled}
+                    activeOpacity={0.7}
+                    onPress={() => {
+                      ttsStop();
+                      setIsAssistantOpen(true);
+                    }}>
                     <Icon name="mic-outline" size={18} color="#FFFFFF" />
                     <Text style={styles.btnFilledText}>질문하기</Text>
                   </TouchableOpacity>
@@ -826,6 +840,13 @@ export default function NavigationScreen({ navigation, route }: Props) {
             message={toastMessage}
             visible={toastVisible}
             onDismiss={handleDismissToast}
+          />
+
+          <AssistantBottomSheet
+            visible={isAssistantOpen}
+            onClose={() => setIsAssistantOpen(false)}
+            routeId={routeData?.routeId ?? null}
+            currentDpId={currentDpId ?? currentDP?.dpId ?? null}
           />
         </SafeAreaView>
       </Animated.View>

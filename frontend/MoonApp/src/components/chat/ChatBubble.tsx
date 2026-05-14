@@ -23,28 +23,29 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
     marginVertical: 4,
-    paddingHorizontal: 16,
   },
   rowUser: {
     justifyContent: 'flex-end',
   },
   bubble: {
-    maxWidth: '80%',
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 16,
+    maxWidth: '82%',
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: 12,
   },
   bubbleUser: {
     backgroundColor: COLORS.primary,
-    borderBottomRightRadius: 4,
+    borderTopRightRadius: 4,
   },
   bubbleSystem: {
-    backgroundColor: '#F0F0F0',
-    borderBottomLeftRadius: 4,
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 4,
+    borderWidth: 0.5,
+    borderColor: '#E5E5EA',
   },
   text: {
-    fontSize: 15,
-    lineHeight: 21,
+    fontSize: 14,
+    lineHeight: 20,
   },
   textUser: {
     color: '#FFFFFF',

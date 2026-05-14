@@ -61,6 +61,7 @@ MOCK_GUIDANCES: list[dict] = [
         "primary": "버거킹 신논현역점에서 출발합니다.",
         "pre_alert": None,
         "action": None,
+        "appearance": "빨간색 'BURGER KING' 간판이 눈에 띄는 매장이에요. 통유리로 된 빌딩 1층에 있어요.",
     },
     # DP1: CROSSWALK (pipeline 1)
     {
@@ -74,6 +75,7 @@ MOCK_GUIDANCES: list[dict] = [
         "primary": "[팀홀튼 신논현역점 방면으로 횡단보도 건너기 안내]",
         "pre_alert": "[횡단보도 곧 나옴 사전 알림]",
         "action": "CROSSWALK",
+        "appearance": "흰색 외관에 크고 작은 동그란 구멍이 빼곡하게 뚫린 독특한 디자인의 건물이에요.",
     },
     # DP2: CROSSWALK (pipeline 2, was pipeline 3 before 아디다스 제거)
     {
@@ -87,6 +89,7 @@ MOCK_GUIDANCES: list[dict] = [
         "primary": "[교보타워 방면으로 횡단보도 건너기 안내]",
         "pre_alert": "[횡단보도 곧 나옴 사전 알림]",
         "action": "CROSSWALK",
+        "appearance": "강남대로 큰 사거리의 횡단보도예요. 길 건너편에 빨간 외관의 교보타워가 보여요.",
     },
     # DP3: DIRECTION_CHANGE — 삽입 (pipeline DP2와 DP3 사이)
     {
@@ -100,6 +103,7 @@ MOCK_GUIDANCES: list[dict] = [
         "primary": "[GS칼텍스에서 좌회전 안내]",
         "pre_alert": "[GS칼텍스 보이면 좌회전 준비 사전 알림]",
         "action": "LEFT_TURN",
+        "appearance": "'energy hub GS칼텍스' 간판의 주유소예요. 한쪽에 banapresso 카페가 함께 있어요.",
     },
     # DP4: CROSSWALK — 테이블나인 방향 횡단보도 (pipeline DP3 위치를 overwrite)
     {
@@ -113,6 +117,7 @@ MOCK_GUIDANCES: list[dict] = [
         "primary": "[테이블나인 방면으로 횡단보도 건너기 안내]",
         "pre_alert": "[횡단보도 곧 나옴 사전 알림]",
         "action": "CROSSWALK",
+        "appearance": "'TABLE NINE' 간판이 걸린 매장이에요. 'BUSINESS CENTER' 빌딩 1층에 입점되어 있어요.",
     },
     # DP5: ARRIVAL (pipeline 4, was pipeline 5 before 아디다스 제거)
     {
@@ -126,6 +131,7 @@ MOCK_GUIDANCES: list[dict] = [
         "primary": "목적지 스타벅스 강남에비뉴점 도착했습니다.",
         "pre_alert": None,
         "action": None,
+        "appearance": "초록색 'STARBUCKS' 간판이 보이는 카페예요. 유리벽으로 된 건물 1층에 자리잡고 있어요.",
     },
 ]
 
@@ -262,6 +268,7 @@ def _overwrite_guidance(
                 match_status="POI_ONLY",
                 is_open=True,
                 location=lm_location,
+                appearance=mock.get("appearance"),
             )
         else:
             dps[i].selected_landmark = None

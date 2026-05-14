@@ -138,11 +138,17 @@ export async function requestReroute(
   return json.data!;
 }
 
+export interface ConversationResult {
+  answer: string;
+  showPanorama?: boolean;
+  targetDpId?: string | null;
+}
+
 export async function sendConversation(
   routeId: string,
   question: string,
   options?: { currentDpId?: string; completedDpIds?: string[] },
-): Promise<{ answer: string }> {
+): Promise<ConversationResult> {
   if (USE_MOCK) {
     return MOCK_CONVERSATION_RESPONSE;
   }
@@ -157,7 +163,7 @@ export async function sendConversation(
     }),
   });
 
-  const json: ApiResponse<{ answer: string }> = toCamelCase(await res.json());
+  const json: ApiResponse<ConversationResult> = toCamelCase(await res.json());
 
   if (json.status === 'ERROR') {
     throw new Error(json.error?.message ?? '대화 요청 실패');
