@@ -111,6 +111,12 @@ class NavigationNotificationModule(reactContext: ReactApplicationContext) :
             }
             putStringArrayListExtra(NavigationForegroundService.EXTRA_DP_TYPES, list)
         }
+        if (params.hasKey(KEY_IS_LISTENING) && !params.isNull(KEY_IS_LISTENING)) {
+            putExtra(
+                NavigationForegroundService.EXTRA_IS_LISTENING,
+                params.getBoolean(KEY_IS_LISTENING),
+            )
+        }
     }
 
     private fun requestPostNotificationsPermissionIfNeeded() {
@@ -140,6 +146,7 @@ class NavigationNotificationModule(reactContext: ReactApplicationContext) :
         private const val KEY_CURRENT_INDEX = "currentIndex"
         private const val KEY_TOTAL_COUNT = "totalCount"
         private const val KEY_DP_TYPES = "dpTypes"
+        private const val KEY_IS_LISTENING = "isListening"
 
         private const val ERR_START = "E_WIDGET_START"
         private const val ERR_UPDATE = "E_WIDGET_UPDATE"

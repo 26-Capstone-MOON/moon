@@ -58,10 +58,10 @@ MOCK_GUIDANCES: list[dict] = [
         "dp_marker_lat": 37.504805,
         "dp_marker_lng": 127.025133,
         "pan_override": 328.5,
-        "primary": "버거킹 신논현역점에서 출발합니다.",
+        "primary": "버거킹 신논현역점에서 출발합니다. 버거킹을 오른쪽에 두고 팀홀튼 앞 까지 직진하세요.",
         "pre_alert": None,
         "action": None,
-        "appearance": "빨간색 'BURGER KING' 간판이 눈에 띄는 매장이에요. 통유리로 된 빌딩 1층에 있어요.",
+        "appearance": "나무 간판에 흰색 글씨로 'BURGER KING'이 쓰여져 있는 패스트푸드점입니다. 통유리로 된 건물 1층에 있습니다.",
     },
     # DP1: CROSSWALK (pipeline 1)
     {
@@ -72,10 +72,10 @@ MOCK_GUIDANCES: list[dict] = [
         "dp_marker_lat": 37.504735,
         "dp_marker_lng": 127.024800,
         "pan_override": 354.3,
-        "primary": "[팀홀튼 신논현역점 방면으로 횡단보도 건너기 안내]",
-        "pre_alert": "[횡단보도 곧 나옴 사전 알림]",
+        "primary": "팀홀튼 앞 횡단보도를 건너세요. 아디다스 방면입니다.",
+        "pre_alert": None,
         "action": "CROSSWALK",
-        "appearance": "흰색 외관에 크고 작은 동그란 구멍이 빼곡하게 뚫린 독특한 디자인의 건물이에요.",
+        "appearance": "흰색 외벽에 동그란 구멍이 빼곡하게 뚫린 벌집형 디자인의 건물입니다. 삼각형 입구에 빨간 글씨로 'Tim Hortons'이 쓰여져 있어요.",
     },
     # DP2: CROSSWALK (pipeline 2, was pipeline 3 before 아디다스 제거)
     {
@@ -86,10 +86,10 @@ MOCK_GUIDANCES: list[dict] = [
         "dp_marker_lat": 37.504341,
         "dp_marker_lng": 127.024922,
         "pan_override": None,
-        "primary": "[교보타워 방면으로 횡단보도 건너기 안내]",
-        "pre_alert": "[횡단보도 곧 나옴 사전 알림]",
+        "primary": "아디다스 앞 횡단보도를 건너세요. 갈색 벽돌의 고층 건물인 교보타워 방면입니다. 건넌 후 주유소 GS칼텍스까지 직진하세요.",
+        "pre_alert": "곧 횡단보도가 나와요.",
         "action": "CROSSWALK",
-        "appearance": "강남대로 큰 사거리의 횡단보도예요. 길 건너편에 빨간 외관의교보타워가 보여요.",
+        "appearance": "갈색 벽돌 외벽에 두 개의 직사각형 타워가 나란히 솟아있는 고층 건물입니다.",
     },
     # DP3: DIRECTION_CHANGE — 삽입 (pipeline DP2와 DP3 사이)
     {
@@ -100,24 +100,24 @@ MOCK_GUIDANCES: list[dict] = [
         "dp_marker_lat": 37.503884,
         "dp_marker_lng": 127.023206,
         "pan_override": 161.1,
-        "primary": "[GS칼텍스에서 좌회전 안내]",
-        "pre_alert": "[GS칼텍스 보이면 좌회전 준비 사전 알림]",
+        "primary": "GS칼텍스를 끼고 좌회전하세요. 좌회전 후 식당 테이블나인까지 직진입니다.",
+        "pre_alert": "곧 왼쪽에 주유소 GS칼텍스가 보여요. 좌회전을 준비하세요.",
         "action": "LEFT_TURN",
-        "appearance": "'energy hub GS칼텍스' 간판의 주유소예요. 한쪽에 banapresso 카페가 함께 있어요.",
+        "appearance": "회색 간판에 'energy hub GS칼텍스'가 쓰여져 있는 주유소입니다.",
     },
-    # DP4: CROSSWALK — 테이블나인 방향 횡단보도 (pipeline DP3 위치를 overwrite)
+    # DP4: DIRECTION_CHANGE — 테이블나인에서 왼쪽으로 휘는 길 (pipeline DP3 위치를 overwrite)
     {
-        "dp_type": "CROSSWALK",
+        "dp_type": "DIRECTION_CHANGE",
         "landmark_name": "테이블나인",
         "landmark_lat": 37.502967,
         "landmark_lng": 127.023442,
         "dp_marker_lat": 37.502911,
         "dp_marker_lng": 127.023368,
         "pan_override": 54.5,
-        "primary": "[테이블나인 방면으로 횡단보도 건너기 안내]",
-        "pre_alert": "[횡단보도 곧 나옴 사전 알림]",
-        "action": "CROSSWALK",
-        "appearance": "'TABLE NINE' 간판이 걸린 매장이에요. 'BUSINESS CENTER' 빌딩 1층에 입점되어 있어요.",
+        "primary": "테이블나인에서 왼쪽으로 휘는 길을 따라 직진하세요. 스타벅스까지 직진입니다.",
+        "pre_alert": "곧 왼쪽에 식당 테이블나인이 보여요.",
+        "action": "LEFT_TURN",
+        "appearance": "검은색 간판에 흰색 글씨로 'TABLE NINE'이 쓰여져 있는 식당입니다.",
     },
     # DP5: ARRIVAL (pipeline 4, was pipeline 5 before 아디다스 제거)
     {
@@ -128,10 +128,10 @@ MOCK_GUIDANCES: list[dict] = [
         "dp_marker_lat": 37.502478,
         "dp_marker_lng": 127.024073,
         "pan_override": None,
-        "primary": "목적지 스타벅스 강남에비뉴점 도착했습니다.",
+        "primary": "목적지 스타벅스 강남에비뉴점에 도착했습니다. 안내를 종료합니다.",
         "pre_alert": None,
         "action": None,
-        "appearance": "초록색 'STARBUCKS' 간판이 보이는 카페예요. 유리벽으로 된 건물 1층에 자리잡고 있어요.",
+        "appearance": "초록색 스타벅스 로고와 흰색 글씨로 'STARBUCKS'가 쓰여져 있는 카페입니다. 통유리로 된 건물 1층에 있습니다.",
     },
 ]
 

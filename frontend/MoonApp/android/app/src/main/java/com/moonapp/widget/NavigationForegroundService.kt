@@ -45,11 +45,19 @@ class NavigationForegroundService : Service() {
         ensureChannel(this)
         val notification = buildNotification(extractState(intent))
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            // 잠금화면 위젯 마이크 액션이 STT를 트리거할 수 있도록 MICROPHONE 타입도 함께 선언.
+            // (API 34+ 부터는 마이크 사용 시 명시적으로 type=microphone 요구됨)
+            val fgsType = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION or
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+            } else {
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
+            }
             ServiceCompat.startForeground(
                 this,
                 NOTIFICATION_ID,
                 notification,
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION,
+                fgsType,
             )
         } else {
             startForeground(NOTIFICATION_ID, notification)
@@ -79,6 +87,7 @@ class NavigationForegroundService : Service() {
         currentIndex = intent.getIntExtra(EXTRA_CURRENT_INDEX, 0),
         totalCount = intent.getIntExtra(EXTRA_TOTAL_COUNT, 0),
         dpTypes = intent.getStringArrayListExtra(EXTRA_DP_TYPES)?.toList() ?: emptyList(),
+        isListening = intent.getBooleanExtra(EXTRA_IS_LISTENING, false),
     )
 
     private fun buildNotification(state: WidgetState): Notification {
@@ -110,6 +119,18 @@ class NavigationForegroundService : Service() {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
 
+        val micIntent = Intent(this, WidgetMicActionReceiver::class.java).apply {
+            action = WidgetMicActionReceiver.ACTION_MIC_TRIGGER
+            `package` = packageName
+        }
+        val micPending = PendingIntent.getBroadcast(
+            this,
+            1,
+            micIntent,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
+        val micLabel = if (state.isListening) MIC_LABEL_LISTENING else MIC_LABEL_IDLE
+
         val builder = NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification_small)
             .setLargeIcon(createLargeIconBitmap(largeIconRes))
@@ -125,6 +146,9 @@ class NavigationForegroundService : Service() {
             .setStyle(buildProgressStyle(state, pct))
             .addAction(
                 NotificationCompat.Action.Builder(0, "안내 종료", stopPending).build(),
+            )
+            .addAction(
+                NotificationCompat.Action.Builder(0, micLabel, micPending).build(),
             )
 
         if (state.next.isNotBlank()) {
@@ -364,6 +388,7 @@ class NavigationForegroundService : Service() {
         val currentIndex: Int,
         val totalCount: Int,
         val dpTypes: List<String> = emptyList(),
+        val isListening: Boolean = false,
     )
 
     companion object {
@@ -381,6 +406,10 @@ class NavigationForegroundService : Service() {
         const val EXTRA_CURRENT_INDEX = "extra_current_index"
         const val EXTRA_TOTAL_COUNT = "extra_total_count"
         const val EXTRA_DP_TYPES = "extra_dp_types"
+        const val EXTRA_IS_LISTENING = "extra_is_listening"
+
+        private const val MIC_LABEL_IDLE = "질문하기"
+        private const val MIC_LABEL_LISTENING = "듣는 중"
 
         const val ARROW_LEFT = "left"
         const val ARROW_RIGHT = "right"

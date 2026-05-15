@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import {
   Animated,
+  DeviceEventEmitter,
   Dimensions,
   PanResponder,
   StyleSheet,
@@ -140,6 +141,12 @@ export default function NavigationScreen({ navigation, route }: Props) {
   useEffect(() => {
     isAssistantOpenRef.current = isAssistantOpen;
   }, [isAssistantOpen]);
+  // 잠금화면 위젯 "질문하기" 트리거 카운터. 증가할 때마다 AssistantBottomSheet의
+  // STT가 자동 시작된다. 첫 트리거 = 1, 두 번째 = 2 ...
+  const [micRequestCounter, setMicRequestCounter] = useState(0);
+  // AssistantBottomSheet 내부 STT가 켜진 상태인지. 위젯 title/body/액션 라벨을
+  // "듣고 있어요" 상태로 갈아끼울 때 사용.
+  const [isAssistantListening, setIsAssistantListening] = useState(false);
   const [isFollowing, setIsFollowing] = useState(true);
   const followTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -271,6 +278,23 @@ export default function NavigationScreen({ navigation, route }: Props) {
 
     const dpTypes = dpList.map(dp => dpTypeToArrowType(dp));
 
+    // 잠금화면에서 어시스턴트 STT가 켜진 상태 → 위젯을 "듣고 있어요" 상태로 갈아끼움.
+    // 이건 deviation/rerouting/returning 보다도 우선순위가 높다 (사용자가 능동적으로 트리거).
+    if (isAssistantListening) {
+      updateWidget({
+        label: '듣고 있어요',
+        primary: '질문을 말씀해주세요...',
+        next: undefined,
+        arrowType: dpTypeToArrowType(currentDP),
+        progress: progressPct,
+        currentIndex: localIndex,
+        totalCount: totalDPs,
+        dpTypes,
+        isListening: true,
+      }).catch(() => {});
+      return;
+    }
+
     // Deviation / rerouting / returning — override DP-based widget state
     if (navigationState === 'DEVIATION_WARNING' || navigationState === 'DEVIATION_CONFIRMED') {
       updateWidget({
@@ -341,7 +365,7 @@ export default function NavigationScreen({ navigation, route }: Props) {
     } else {
       updateWidget(state).catch(err => console.warn('updateWidget failed', err));
     }
-  }, [currentDP, nextDP, localIndex, dpList.length, navigationState, trigger]);
+  }, [currentDP, nextDP, localIndex, dpList.length, navigationState, trigger, isAssistantListening]);
 
   // Stop widget on unmount
   useEffect(() => {
@@ -479,6 +503,18 @@ export default function NavigationScreen({ navigation, route }: Props) {
     connect();
     startTracking();
   // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // 잠금화면 위젯 "질문하기" 탭 → BroadcastReceiver → DeviceEventEmitter.
+  // 시트 자동 오픈 + 카운터 증가로 STT 자동 시작 트리거.
+  useEffect(() => {
+    const sub = DeviceEventEmitter.addListener('WidgetMicTriggered', () => {
+      console.log('[Widget] WidgetMicTriggered received');
+      ttsStop();
+      setIsAssistantOpen(true);
+      setMicRequestCounter(prev => prev + 1);
+    });
+    return () => sub.remove();
   }, []);
 
   // Stop auto-progress and tracking when arrived via server state
@@ -887,6 +923,8 @@ export default function NavigationScreen({ navigation, route }: Props) {
             onClose={() => setIsAssistantOpen(false)}
             routeId={routeData?.routeId ?? null}
             currentDpId={currentDpId ?? currentDP?.dpId ?? null}
+            autoStartCounter={micRequestCounter}
+            onListeningChange={setIsAssistantListening}
           />
         </SafeAreaView>
       </Animated.View>

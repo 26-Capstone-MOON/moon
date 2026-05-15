@@ -4,6 +4,7 @@ import com.facebook.react.ReactActivity
 import com.facebook.react.ReactActivityDelegate
 import com.facebook.react.defaults.DefaultNewArchitectureEntryPoint.fabricEnabled
 import com.facebook.react.defaults.DefaultReactActivityDelegate
+import com.moonapp.widget.WidgetMicActionReceiver
 
 class MainActivity : ReactActivity() {
 
@@ -19,4 +20,11 @@ class MainActivity : ReactActivity() {
    */
   override fun createReactActivityDelegate(): ReactActivityDelegate =
       DefaultReactActivityDelegate(this, mainComponentName, fabricEnabled)
+
+  // 잠금화면 위젯 "질문하기" 탭이 발생했을 때 ReactContext가 아직 안 떠 있어서
+  // 이벤트가 드랍됐을 경우, 사용자가 앱을 열 때 한 번 더 시도한다.
+  override fun onResume() {
+    super.onResume()
+    WidgetMicActionReceiver.tryConsumePendingTrigger(this)
+  }
 }

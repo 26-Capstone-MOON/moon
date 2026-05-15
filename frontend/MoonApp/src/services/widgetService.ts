@@ -20,6 +20,9 @@ export interface WidgetState {
   currentIndex?: number;
   totalCount?: number;
   dpTypes?: ArrowType[];
+  // 잠금화면 위젯에서 STT가 켜진 상태이면 마이크 액션 라벨을
+  // "듣는 중"으로 토글하고 title/body를 "듣고 있어요" 안내로 갈아끼우기 위한 플래그.
+  isListening?: boolean;
 }
 
 export const startWidget = (state: WidgetState): Promise<void> =>

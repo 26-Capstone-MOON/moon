@@ -30,6 +30,11 @@ interface Props {
   onClose: () => void;
   routeId: string | null;
   currentDpId: string | null;
+  // 잠금화면 위젯 "질문하기" 트리거. 카운터 값이 증가할 때마다 STT 자동 시작.
+  // 시트가 이미 열려있는 상태에서도 카운터 증가만으로 재트리거 가능.
+  autoStartCounter?: number;
+  // STT isListening 상태 변화를 부모(NavigationScreen)에 보고. 위젯 상태 갱신용.
+  onListeningChange?: (listening: boolean) => void;
 }
 
 interface PanoramaPayload {
@@ -75,6 +80,8 @@ export default function AssistantBottomSheet({
   onClose,
   routeId,
   currentDpId,
+  autoStartCounter,
+  onListeningChange,
 }: Props) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -146,6 +153,25 @@ export default function AssistantBottomSheet({
       clearTypingTimers();
     };
   }, [clearTypingTimers]);
+
+  // 잠금화면 위젯 트리거: autoStartCounter 증가 시 STT 자동 시작.
+  // visible이 false → true로 전환되며 시트가 열리는 첫 렌더에서는 messages가
+  // 비어있을 수 있으므로, 한 틱 양보한 뒤 startListening 호출.
+  useEffect(() => {
+    if (!autoStartCounter || autoStartCounter <= 0) { return; }
+    if (!visible) { return; }
+    console.log('[Assistant] autoStartCounter triggered:', autoStartCounter);
+    ttsStop();
+    const t = setTimeout(() => {
+      startListening().catch((e) => console.warn('[Assistant] auto startListening failed', e));
+    }, 250);
+    return () => clearTimeout(t);
+  }, [autoStartCounter, visible, startListening]);
+
+  // isListening 변화를 부모에 알림 (위젯 상태 갱신용)
+  useEffect(() => {
+    onListeningChange?.(isListening);
+  }, [isListening, onListeningChange]);
 
   const handleAnswer = useCallback(
     async (question: string) => {
