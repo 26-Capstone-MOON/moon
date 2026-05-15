@@ -1,9 +1,11 @@
-import { useState, useCallback, useRef } from 'react';
-import { PermissionsAndroid, Platform } from 'react-native';
-import Voice, {
-  SpeechResultsEvent,
-  SpeechErrorEvent,
-} from '@react-native-voice/voice';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  EmitterSubscription,
+  NativeEventEmitter,
+  NativeModules,
+  PermissionsAndroid,
+  Platform,
+} from 'react-native';
 
 interface UseSTTReturn {
   transcript: string;
@@ -12,6 +14,55 @@ interface UseSTTReturn {
   startListening: () => Promise<void>;
   stopListening: () => Promise<void>;
   reset: () => void;
+}
+
+interface SpeechResultsEvent {
+  value?: string[];
+}
+
+interface SpeechErrorEvent {
+  error?: { message?: string; code?: string };
+}
+
+const RCTVoice = (NativeModules as Record<string, any>).RCTVoice;
+
+function startSpeechNative(locale: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (!RCTVoice) {
+      reject(new Error('RCTVoice native module not available'));
+      return;
+    }
+    RCTVoice.startSpeech(
+      locale,
+      {
+        EXTRA_LANGUAGE_MODEL: 'LANGUAGE_MODEL_FREE_FORM',
+        EXTRA_MAX_RESULTS: 5,
+        EXTRA_PARTIAL_RESULTS: true,
+        REQUEST_PERMISSIONS_AUTO: true,
+      },
+      (err: string | null) => {
+        if (err) { reject(new Error(err)); } else { resolve(); }
+      },
+    );
+  });
+}
+
+function stopSpeechNative(): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (!RCTVoice) { resolve(); return; }
+    RCTVoice.stopSpeech((err: string | null) => {
+      if (err) { reject(new Error(err)); } else { resolve(); }
+    });
+  });
+}
+
+function isSpeechAvailableNative(): Promise<boolean> {
+  return new Promise((resolve) => {
+    if (!RCTVoice) { resolve(false); return; }
+    RCTVoice.isSpeechAvailable((available: 0 | 1) => {
+      resolve(!!available);
+    });
+  });
 }
 
 async function ensureMicPermission(): Promise<boolean> {
@@ -46,37 +97,49 @@ export function useSTT(): UseSTTReturn {
   const [transcript, setTranscript] = useState('');
   const [isListening, setIsListening] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const subsRef = useRef<EmitterSubscription[]>([]);
   const initialized = useRef(false);
 
   const initListeners = useCallback(() => {
     if (initialized.current) { return; }
+    if (!RCTVoice) {
+      console.warn('[STT] RCTVoice native module not available — listeners not wired');
+      return;
+    }
     initialized.current = true;
-    console.log('[STT] initListeners — wiring Voice callbacks');
+    console.log('[STT] initListeners — wiring RCTVoice events');
 
-    Voice.onSpeechStart = () => {
-      console.log('[STT] onSpeechStart');
-    };
+    const emitter = new NativeEventEmitter(RCTVoice);
+    subsRef.current.push(
+      emitter.addListener('onSpeechStart', () => {
+        console.log('[STT] onSpeechStart');
+      }),
+      emitter.addListener('onSpeechResults', (e: SpeechResultsEvent) => {
+        const text = e.value?.[0] ?? '';
+        console.log('[STT] onSpeechResults:', text);
+        setTranscript(text);
+      }),
+      emitter.addListener('onSpeechPartialResults', (e: SpeechResultsEvent) => {
+        const text = e.value?.[0] ?? '';
+        console.log('[STT] onSpeechPartialResults:', text);
+      }),
+      emitter.addListener('onSpeechError', (e: SpeechErrorEvent) => {
+        console.warn('[STT] onSpeechError:', e.error);
+        setError(e.error?.message ?? '음성 인식 오류');
+        setIsListening(false);
+      }),
+      emitter.addListener('onSpeechEnd', () => {
+        console.log('[STT] onSpeechEnd');
+        setIsListening(false);
+      }),
+    );
+  }, []);
 
-    Voice.onSpeechResults = (e: SpeechResultsEvent) => {
-      const text = e.value?.[0] ?? '';
-      console.log('[STT] onSpeechResults:', text);
-      setTranscript(text);
-    };
-
-    Voice.onSpeechPartialResults = (e: SpeechResultsEvent) => {
-      const text = e.value?.[0] ?? '';
-      console.log('[STT] onSpeechPartialResults:', text);
-    };
-
-    Voice.onSpeechError = (e: SpeechErrorEvent) => {
-      console.warn('[STT] onSpeechError:', e.error);
-      setError(e.error?.message ?? '음성 인식 오류');
-      setIsListening(false);
-    };
-
-    Voice.onSpeechEnd = () => {
-      console.log('[STT] onSpeechEnd');
-      setIsListening(false);
+  useEffect(() => {
+    return () => {
+      subsRef.current.forEach((s) => s.remove());
+      subsRef.current = [];
+      initialized.current = false;
     };
   }, []);
 
@@ -94,20 +157,20 @@ export function useSTT(): UseSTTReturn {
     }
 
     try {
-      const available = await Voice.isAvailable();
-      console.log('[STT] Voice.isAvailable:', available);
+      const available = await isSpeechAvailableNative();
+      console.log('[STT] isSpeechAvailable:', available);
     } catch (e) {
-      console.warn('[STT] Voice.isAvailable check failed:', e);
+      console.warn('[STT] isSpeechAvailable check failed:', e);
     }
 
     try {
-      console.log('[STT] calling Voice.start(ko-KR)');
-      await Voice.start('ko-KR');
+      console.log('[STT] calling startSpeech(ko-KR)');
+      await startSpeechNative('ko-KR');
       setIsListening(true);
-      console.log('[STT] Voice.start OK — isListening=true');
+      console.log('[STT] startSpeech OK — isListening=true');
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : '음성 인식 시작 실패';
-      console.error('[STT] Voice.start failed:', message, e);
+      console.error('[STT] startSpeech failed:', message, e);
       setError(message);
     }
   }, [initListeners]);
@@ -115,10 +178,10 @@ export function useSTT(): UseSTTReturn {
   const stopListening = useCallback(async () => {
     console.log('[STT] stopListening called');
     try {
-      await Voice.stop();
-      console.log('[STT] Voice.stop OK');
+      await stopSpeechNative();
+      console.log('[STT] stopSpeech OK');
     } catch (e) {
-      console.warn('[STT] Voice.stop error:', e);
+      console.warn('[STT] stopSpeech error:', e);
     }
     setIsListening(false);
   }, []);

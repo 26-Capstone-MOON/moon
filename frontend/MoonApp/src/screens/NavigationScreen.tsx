@@ -587,12 +587,50 @@ export default function NavigationScreen({ navigation, route }: Props) {
     );
   }
 
-  // Map camera center on GPS position (fallback to current DP)
-  // Only applied when isFollowing is true (paused when user pans/zooms)
-  const cameraLat = position?.latitude ?? currentDP.location.latitude;
-  const cameraLng = position?.longitude ?? currentDP.location.longitude;
-  const cameraProps = isFollowing ? {
-    camera: { latitude: cameraLat, longitude: cameraLng, zoom: 17 },
+  // Initial camera: lock to actual route origin (the user's real starting GPS),
+  // not dpList[0].location which is the DP marker (~10m offset from origin).
+  // Priority: routeData.origin (server-provided) → dpList[0].location → demo fallback.
+  // Use wider zoom (15) at first paint — zoom 17 felt cramped on entry.
+  // Once GPS arrives AND is within range, the live `camera` prop zooms in to 17.
+  const cameraOrigin = useMemo(() => {
+    // Demo route origin (matches DEMO_ROUTE_ORIGIN in mock_guidance_final.py).
+    // Used only when neither server origin nor dpList[0] is available.
+    const DEMO_ORIGIN = { latitude: 37.504879, longitude: 127.025111 };
+    const o = routeData?.origin ?? dpList[0]?.location ?? DEMO_ORIGIN;
+    return { latitude: o.latitude, longitude: o.longitude };
+  }, [routeData, dpList]);
+  const initialCamera = useMemo(
+    () => ({ latitude: cameraOrigin.latitude, longitude: cameraOrigin.longitude, zoom: 15 }),
+    [cameraOrigin],
+  );
+
+  // Distance-based GPS filter: the emulator's default GPS often emits a stale
+  // value (e.g., Nonhyeon station ~1km away from BurgerKing) for ~2s after
+  // mount, which would jerk the camera. Only follow `position` once it is
+  // within 500m of the route origin — i.e., a plausible reading near the
+  // start. Until then, stick with initialCamera at the origin.
+  const positionNearOrigin = useMemo(() => {
+    if (!position) { return false; }
+    // Haversine in meters (inline to avoid extra import)
+    const toRad = (d: number) => (d * Math.PI) / 180;
+    const R = 6371000;
+    const dLat = toRad(position.latitude - cameraOrigin.latitude);
+    const dLng = toRad(position.longitude - cameraOrigin.longitude);
+    const a =
+      Math.sin(dLat / 2) ** 2 +
+      Math.cos(toRad(cameraOrigin.latitude)) *
+        Math.cos(toRad(position.latitude)) *
+        Math.sin(dLng / 2) ** 2;
+    const d = 2 * R * Math.asin(Math.sqrt(a));
+    return d <= 500;
+  }, [position, cameraOrigin]);
+
+  // Live camera follows GPS once available AND near the route origin. While
+  // position is null or far away (emulator default), leave `camera` undefined
+  // so the native side keeps initialCamera intact. Skipped if the user has
+  // panned/zoomed (isFollowing=false).
+  const cameraProps = isFollowing && position && positionNearOrigin ? {
+    camera: { latitude: position.latitude, longitude: position.longitude, zoom: 17 },
   } : {};
 
   return (
@@ -627,7 +665,9 @@ export default function NavigationScreen({ navigation, route }: Props) {
               visible={navigationState === 'DEVIATION_WARNING'}
             />
             <MapView
+              initialCamera={initialCamera}
               {...cameraProps}
+              animationDuration={500}
               onCameraChanged={handleCameraChanged}
               mapPadding={{ bottom: Math.round(SCREEN_HEIGHT * SNAP_MIN) + 16, top: 0, left: 0, right: 0 }}>
               <RoutePolyline

@@ -89,7 +89,7 @@ MOCK_GUIDANCES: list[dict] = [
         "primary": "[교보타워 방면으로 횡단보도 건너기 안내]",
         "pre_alert": "[횡단보도 곧 나옴 사전 알림]",
         "action": "CROSSWALK",
-        "appearance": "강남대로 큰 사거리의 횡단보도예요. 길 건너편에 빨간 외관의 교보타워가 보여요.",
+        "appearance": "강남대로 큰 사거리의 횡단보도예요. 길 건너편에 빨간 외관의교보타워가 보여요.",
     },
     # DP3: DIRECTION_CHANGE — 삽입 (pipeline DP2와 DP3 사이)
     {
