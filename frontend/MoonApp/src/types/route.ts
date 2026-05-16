@@ -63,6 +63,8 @@ export interface DecisionPoint {
 
 export interface RouteData {
   routeId: string;
+  origin?: Location;
+  destination?: Location;
   totalDistance: number;
   totalTime: number;
   weather?: any;

@@ -8,6 +8,8 @@
     <uses-permission android:name="android.permission.POST_PROMOTED_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
     <application
       android:name=".MainApplication"
@@ -36,6 +38,9 @@
       <service
         android:name=".widget.NavigationForegroundService"
         android:exported="false"
-        android:foregroundServiceType="location" />
+        android:foregroundServiceType="location|microphone" />
+      <receiver
+        android:name=".widget.WidgetMicActionReceiver"
+        android:exported="false" />
     </application>
 </manifest>

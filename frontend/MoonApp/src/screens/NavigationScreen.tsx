@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import {
   Animated,
+  DeviceEventEmitter,
   Dimensions,
   PanResponder,
   StyleSheet,
@@ -31,6 +32,7 @@ import CurrentLocationMarker from '../components/map/CurrentLocationMarker';
 import DeviationBanner from '../components/guide/DeviationBanner';
 import ErrorToast from '../components/common/ErrorToast';
 import LoadingOverlay from '../components/common/LoadingOverlay';
+import AssistantBottomSheet from '../components/chat/AssistantBottomSheet';
 // requestReroute import removed — reroute handled by WebSocket server
 import { toCamelCase } from '../utils/caseConverter';
 // extractErrorMessage import removed — no longer used after reroute cleanup
@@ -61,15 +63,20 @@ const SNAP_MAX = 0.90;  // 90%
 const PANO_HEIGHT_MIN = 200;
 const PANO_HEIGHT_MAX = 260;
 
-function getDpIcon(dpType: string): string {
-  switch (dpType) {
-    case 'DIRECTION_CHANGE': return 'arrow-forward';
-    case 'CROSSWALK': return 'walk-outline';
-    case 'VIRTUAL': return 'arrow-up';
-    case 'ARRIVAL': return 'flag';
-    case 'VERTICAL_MOVE': return 'swap-vertical-outline';
-    case 'DEPARTURE': return 'navigate-outline';
-    default: return 'navigate-outline';
+// Header icon: routed through the same arrow-type classifier as the lock-screen
+// widget (see widgetService.dpTypeToArrowType) so that LEFT/RIGHT/U turns,
+// crosswalks, vertical moves, and straight segments stay visually consistent
+// between the in-app header and the background widget.
+function getDpIcon(dp: DecisionPoint): string {
+  switch (dpTypeToArrowType(dp)) {
+    case 'left': return 'arrow-back';
+    case 'right': return 'arrow-forward';
+    case 'crosswalk': return 'walk-outline';
+    case 'vertical_move': return 'swap-vertical-outline';
+    case 'arrived': return 'flag';
+    case 'warning': return 'warning';
+    case 'straight':
+    default: return 'arrow-up';
   }
 }
 
@@ -129,6 +136,17 @@ export default function NavigationScreen({ navigation, route }: Props) {
   const [panoReady, setPanoReady] = useState(false);
   const [panoEnabled, _setPanoEnabled] = useState(true);
   const [ttsEnabled, setTtsEnabled] = useState(true);
+  const [isAssistantOpen, setIsAssistantOpen] = useState(false);
+  const isAssistantOpenRef = useRef(false);
+  useEffect(() => {
+    isAssistantOpenRef.current = isAssistantOpen;
+  }, [isAssistantOpen]);
+  // 잠금화면 위젯 "질문하기" 트리거 카운터. 증가할 때마다 AssistantBottomSheet의
+  // STT가 자동 시작된다. 첫 트리거 = 1, 두 번째 = 2 ...
+  const [micRequestCounter, setMicRequestCounter] = useState(0);
+  // AssistantBottomSheet 내부 STT가 켜진 상태인지. 위젯 title/body/액션 라벨을
+  // "듣고 있어요" 상태로 갈아끼울 때 사용.
+  const [isAssistantListening, setIsAssistantListening] = useState(false);
   const [isFollowing, setIsFollowing] = useState(true);
   const followTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -260,6 +278,23 @@ export default function NavigationScreen({ navigation, route }: Props) {
 
     const dpTypes = dpList.map(dp => dpTypeToArrowType(dp));
 
+    // 잠금화면에서 어시스턴트 STT가 켜진 상태 → 위젯을 "듣고 있어요" 상태로 갈아끼움.
+    // 이건 deviation/rerouting/returning 보다도 우선순위가 높다 (사용자가 능동적으로 트리거).
+    if (isAssistantListening) {
+      updateWidget({
+        label: '듣고 있어요',
+        primary: '질문을 말씀해주세요...',
+        next: undefined,
+        arrowType: dpTypeToArrowType(currentDP),
+        progress: progressPct,
+        currentIndex: localIndex,
+        totalCount: totalDPs,
+        dpTypes,
+        isListening: true,
+      }).catch(() => {});
+      return;
+    }
+
     // Deviation / rerouting / returning — override DP-based widget state
     if (navigationState === 'DEVIATION_WARNING' || navigationState === 'DEVIATION_CONFIRMED') {
       updateWidget({
@@ -330,7 +365,7 @@ export default function NavigationScreen({ navigation, route }: Props) {
     } else {
       updateWidget(state).catch(err => console.warn('updateWidget failed', err));
     }
-  }, [currentDP, nextDP, localIndex, dpList.length, navigationState, trigger]);
+  }, [currentDP, nextDP, localIndex, dpList.length, navigationState, trigger, isAssistantListening]);
 
   // Stop widget on unmount
   useEffect(() => {
@@ -400,22 +435,31 @@ export default function NavigationScreen({ navigation, route }: Props) {
     if (text) {
       lastSpokenKey.current = spokenKey;
       console.log('[TTS] 재생:', text, audio ? '(Google TTS)' : '(device TTS)');
-      if (ttsEnabled) {
+      if (ttsEnabled && !isAssistantOpenRef.current) {
         ttsStop();
         ttsSpeak(text, audio);
+      } else if (isAssistantOpenRef.current) {
+        console.log('[TTS] 어시스턴트 열림 → 자동 안내 TTS 스킵');
       }
     }
   }, [trigger, guidance, currentDpId, ttsEnabled, isRerouting]);
 
-  // Sync localIndex from server's currentDpId
+  // Sync localIndex from server's currentDpId.
+  // Card advance (idx > localIndex) only fires on ARRIVAL/CONFIRMATION trigger.
+  // PRE_ALERT plays TTS only — does NOT switch the card.
+  // Backward sync (idx < localIndex) always allowed for reroute / rewind cases.
   useEffect(() => {
     if (!currentDpId || connectionState !== 'CONNECTED') { return; }
     const idx = dpList.findIndex(dp => dp.dpId === currentDpId);
-    if (idx >= 0 && idx !== localIndex) {
-      console.log('[NAV] 서버 DP 동기화:', currentDpId, '/ index:', idx);
+    if (idx < 0) { return; }
+    if (idx > localIndex && trigger !== 'ARRIVAL' && trigger !== 'CONFIRMATION') {
+      return;
+    }
+    if (idx !== localIndex) {
+      console.log('[NAV] 서버 DP 동기화:', currentDpId, '/ index:', idx, '/ trigger:', trigger);
       setLocalIndex(idx);
     }
-  }, [currentDpId, dpList, connectionState, localIndex]);
+  }, [currentDpId, trigger, dpList, connectionState, localIndex]);
 
   // Auto-progress mock — only when WebSocket is NOT connected
   useEffect(() => {
@@ -461,6 +505,18 @@ export default function NavigationScreen({ navigation, route }: Props) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // 잠금화면 위젯 "질문하기" 탭 → BroadcastReceiver → DeviceEventEmitter.
+  // 시트 자동 오픈 + 카운터 증가로 STT 자동 시작 트리거.
+  useEffect(() => {
+    const sub = DeviceEventEmitter.addListener('WidgetMicTriggered', () => {
+      console.log('[Widget] WidgetMicTriggered received');
+      ttsStop();
+      setIsAssistantOpen(true);
+      setMicRequestCounter(prev => prev + 1);
+    });
+    return () => sub.remove();
+  }, []);
+
   // Stop auto-progress and tracking when arrived via server state
   useEffect(() => {
     if (navigationState === 'ARRIVED') {
@@ -471,6 +527,19 @@ export default function NavigationScreen({ navigation, route }: Props) {
       stopWidget().catch(err => console.warn('stopWidget failed', err));
     }
   }, [navigationState, stopTracking, disconnect]);
+
+  // Delay arrived overlay so user can read the final DP card (~5s).
+  // The card stays visible during the delay; cleanup above runs immediately.
+  const [showArrivedOverlay, setShowArrivedOverlay] = useState(false);
+  useEffect(() => {
+    const arrived = (isLastDP && currentDP?.dpType === 'ARRIVAL') || navigationState === 'ARRIVED';
+    if (!arrived) {
+      setShowArrivedOverlay(false);
+      return;
+    }
+    const t = setTimeout(() => setShowArrivedOverlay(true), 5000);
+    return () => clearTimeout(t);
+  }, [isLastDP, currentDP, navigationState]);
 
   // Reroute is handled by WebSocket server (TrackingWebSocketHandler)
   // — no REST call needed from frontend. The reroute response arrives
@@ -554,12 +623,50 @@ export default function NavigationScreen({ navigation, route }: Props) {
     );
   }
 
-  // Map camera center on GPS position (fallback to current DP)
-  // Only applied when isFollowing is true (paused when user pans/zooms)
-  const cameraLat = position?.latitude ?? currentDP.location.latitude;
-  const cameraLng = position?.longitude ?? currentDP.location.longitude;
-  const cameraProps = isFollowing ? {
-    camera: { latitude: cameraLat, longitude: cameraLng, zoom: 16 },
+  // Initial camera: lock to actual route origin (the user's real starting GPS),
+  // not dpList[0].location which is the DP marker (~10m offset from origin).
+  // Priority: routeData.origin (server-provided) → dpList[0].location → demo fallback.
+  // Use wider zoom (15) at first paint — zoom 17 felt cramped on entry.
+  // Once GPS arrives AND is within range, the live `camera` prop zooms in to 17.
+  const cameraOrigin = useMemo(() => {
+    // Demo route origin (matches DEMO_ROUTE_ORIGIN in mock_guidance_final.py).
+    // Used only when neither server origin nor dpList[0] is available.
+    const DEMO_ORIGIN = { latitude: 37.504879, longitude: 127.025111 };
+    const o = routeData?.origin ?? dpList[0]?.location ?? DEMO_ORIGIN;
+    return { latitude: o.latitude, longitude: o.longitude };
+  }, [routeData, dpList]);
+  const initialCamera = useMemo(
+    () => ({ latitude: cameraOrigin.latitude, longitude: cameraOrigin.longitude, zoom: 15 }),
+    [cameraOrigin],
+  );
+
+  // Distance-based GPS filter: the emulator's default GPS often emits a stale
+  // value (e.g., Nonhyeon station ~1km away from BurgerKing) for ~2s after
+  // mount, which would jerk the camera. Only follow `position` once it is
+  // within 500m of the route origin — i.e., a plausible reading near the
+  // start. Until then, stick with initialCamera at the origin.
+  const positionNearOrigin = useMemo(() => {
+    if (!position) { return false; }
+    // Haversine in meters (inline to avoid extra import)
+    const toRad = (d: number) => (d * Math.PI) / 180;
+    const R = 6371000;
+    const dLat = toRad(position.latitude - cameraOrigin.latitude);
+    const dLng = toRad(position.longitude - cameraOrigin.longitude);
+    const a =
+      Math.sin(dLat / 2) ** 2 +
+      Math.cos(toRad(cameraOrigin.latitude)) *
+        Math.cos(toRad(position.latitude)) *
+        Math.sin(dLng / 2) ** 2;
+    const d = 2 * R * Math.asin(Math.sqrt(a));
+    return d <= 500;
+  }, [position, cameraOrigin]);
+
+  // Live camera follows GPS once available AND near the route origin. While
+  // position is null or far away (emulator default), leave `camera` undefined
+  // so the native side keeps initialCamera intact. Skipped if the user has
+  // panned/zoomed (isFollowing=false).
+  const cameraProps = isFollowing && position && positionNearOrigin ? {
+    camera: { latitude: position.latitude, longitude: position.longitude, zoom: 17 },
   } : {};
 
   return (
@@ -574,7 +681,7 @@ export default function NavigationScreen({ navigation, route }: Props) {
             </TouchableOpacity>
             <View style={styles.topCenter}>
               <View style={styles.dpIconWrap}>
-                <Icon name={getDpIcon(currentDP.dpType)} size={20} color="#FFFFFF" />
+                <Icon name={getDpIcon(currentDP)} size={20} color="#FFFFFF" />
               </View>
               <Text style={styles.topLabel}>{getDpLabel(currentDP.dpType)}</Text>
             </View>
@@ -594,7 +701,9 @@ export default function NavigationScreen({ navigation, route }: Props) {
               visible={navigationState === 'DEVIATION_WARNING'}
             />
             <MapView
+              initialCamera={initialCamera}
               {...cameraProps}
+              animationDuration={500}
               onCameraChanged={handleCameraChanged}
               mapPadding={{ bottom: Math.round(SCREEN_HEIGHT * SNAP_MIN) + 16, top: 0, left: 0, right: 0 }}>
               <RoutePolyline
@@ -743,7 +852,13 @@ export default function NavigationScreen({ navigation, route }: Props) {
                       {ttsEnabled ? '음성안내' : '음성끔'}
                     </Text>
                   </TouchableOpacity>
-                  <TouchableOpacity style={styles.btnFilled} activeOpacity={0.7}>
+                  <TouchableOpacity
+                    style={styles.btnFilled}
+                    activeOpacity={0.7}
+                    onPress={() => {
+                      ttsStop();
+                      setIsAssistantOpen(true);
+                    }}>
                     <Icon name="mic-outline" size={18} color="#FFFFFF" />
                     <Text style={styles.btnFilledText}>질문하기</Text>
                   </TouchableOpacity>
@@ -762,8 +877,8 @@ export default function NavigationScreen({ navigation, route }: Props) {
             </BottomSheetScrollView>
           </BottomSheet>
 
-          {/* Arrived overlay */}
-          {((isLastDP && currentDP.dpType === 'ARRIVAL') || navigationState === 'ARRIVED') && (
+          {/* Arrived overlay (delayed 5s so user can see the final DP card first) */}
+          {showArrivedOverlay && (
             <View style={styles.arrivedOverlay}>
               <View style={styles.arrivedCard}>
                 <View style={styles.arrivedIconWrap}>
@@ -801,6 +916,15 @@ export default function NavigationScreen({ navigation, route }: Props) {
             message={toastMessage}
             visible={toastVisible}
             onDismiss={handleDismissToast}
+          />
+
+          <AssistantBottomSheet
+            visible={isAssistantOpen}
+            onClose={() => setIsAssistantOpen(false)}
+            routeId={routeData?.routeId ?? null}
+            currentDpId={currentDpId ?? currentDP?.dpId ?? null}
+            autoStartCounter={micRequestCounter}
+            onListeningChange={setIsAssistantListening}
           />
         </SafeAreaView>
       </Animated.View>

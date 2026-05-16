@@ -77,7 +77,7 @@ export default function RouteConfirmScreen({ navigation, route }: Props) {
   const mapCamera = useMemo(() => ({
     latitude: (departure.lat + destination.lat) / 2,
     longitude: (departure.lng + destination.lng) / 2,
-    zoom: 14,
+    zoom: 15,
   }), [departure, destination]);
 
   const handleStart = async () => {
