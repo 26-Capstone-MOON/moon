@@ -5,7 +5,7 @@ import type { RouteData } from '../types/route';
 import type { ApiResponse } from '../types/api';
 import type { Place } from '../types/navigation';
 
-const BASE_URL = 'http://10.0.2.2:8080/api';
+const BASE_URL = 'http://localhost:8080/api';
 const USE_MOCK = false;
 
 /** Extract route data from various response shapes (double-wrapped, flat, etc.) */
