@@ -257,7 +257,9 @@ class NavigationForegroundService : Service() {
         }
 
         val safeTotal = totalCount.coerceAtLeast(1)
-        val groups = groupDpTypes(dpTypes)
+        // 그룹화 비활성: 각 DP를 1칸짜리 그룹으로 1:1 매핑.
+        // (groupDpTypes는 dead code로 남김 — 추후 다시 그룹 표시 원하면 복원)
+        val groups = dpTypes.mapIndexed { i, t -> DpGroup(t, 1, i) }
 
         // 길이 = (그룹 DP 수 / 전체) * 100, 마지막 그룹에 remainder 흡수
         val baseLengths = groups.map { (it.count * 100) / safeTotal }

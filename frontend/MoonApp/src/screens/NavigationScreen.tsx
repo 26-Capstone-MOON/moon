@@ -201,7 +201,7 @@ export default function NavigationScreen({ navigation, route }: Props) {
   }, [updateFromTracking, setRouteData]);
 
   const { connectionState, send, connect, disconnect } = useWebSocket({
-    url: 'ws://10.0.2.2:8080/api/tracking',
+    url: 'ws://localhost:8080/api/tracking',
     onMessage: handleWsMessage,
     onError: (msg) => showError(msg),
   });

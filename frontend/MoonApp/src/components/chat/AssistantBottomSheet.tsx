@@ -23,6 +23,7 @@ import { useRouteStore } from '../../stores/useRouteStore';
 import type { DecisionPoint } from '../../types/route';
 import { buildPanoramaHtml, getPrimaryPan } from '../../utils/panoramaUtils';
 import ChatBubble from './ChatBubble';
+import TypingIndicator from './TypingIndicator';
 import VoiceButton from './VoiceButton';
 
 interface Props {
@@ -58,6 +59,9 @@ const SCREEN_HEIGHT = Dimensions.get('window').height;
 const SHEET_HEIGHT = Math.round(SCREEN_HEIGHT * 0.6);
 const INITIAL_TEXT = '무엇을 도와드릴까요?';
 const TYPING_CHAR_DELAY_MS = 45;
+// 타이핑 인디케이터 최소 노출 시간. mock 응답이 즉시 와도 자연스러운
+// "AI가 생각 중" 인상을 주기 위함. 실제 API가 더 걸리면 자연히 그만큼 유지됨.
+const MIN_INDICATOR_MS = 2000;
 
 function buildPanoramaPayload(dp: DecisionPoint): PanoramaPayload | null {
   if (!dp.panoramaRequest) { return null; }
@@ -184,6 +188,13 @@ export default function AssistantBottomSheet({
       }
       isProcessingRef.current = true;
       setIsProcessing(true);
+      const startTime = Date.now();
+      // 인디케이터 최소 노출시간 보장용 pending 처리. try/catch 어느 경로든
+      // finally에서 elapsed를 보고 부족하면 setTimeout으로 마저 채운 뒤 해제.
+      let pendingResult:
+        | { kind: 'ok'; answer: string; panorama?: PanoramaPayload }
+        | { kind: 'err' }
+        | null = null;
       try {
         const result = await sendConversation(routeId, question, {
           currentDpId: currentDpId ?? undefined,
@@ -211,19 +222,37 @@ export default function AssistantBottomSheet({
           }
         }
 
-        const id = `a-${Date.now()}`;
-        setMessages(prev => [...prev, { id, role: 'assistant', text: '', panorama }]);
-        ttsStop();
-        ttsSpeak(answer);
-        typeAssistantMessage(id, answer);
+        pendingResult = { kind: 'ok', answer, panorama };
       } catch (e) {
         console.warn('[Assistant] sendConversation failed:', e);
-        const id = `a-${Date.now()}`;
-        setMessages(prev => [...prev, { id, role: 'assistant', text: '' }]);
-        typeAssistantMessage(id, '답변을 받지 못했어요. 다시 시도해주세요.');
+        pendingResult = { kind: 'err' };
       } finally {
-        isProcessingRef.current = false;
-        setIsProcessing(false);
+        const elapsed = Date.now() - startTime;
+        const wait = Math.max(0, MIN_INDICATOR_MS - elapsed);
+        const finalize = () => {
+          if (pendingResult?.kind === 'ok') {
+            const id = `a-${Date.now()}`;
+            setMessages(prev => [
+              ...prev,
+              { id, role: 'assistant', text: '', panorama: pendingResult!.kind === 'ok' ? pendingResult!.panorama : undefined },
+            ]);
+            ttsStop();
+            ttsSpeak(pendingResult.answer);
+            typeAssistantMessage(id, pendingResult.answer);
+          } else {
+            const id = `a-${Date.now()}`;
+            setMessages(prev => [...prev, { id, role: 'assistant', text: '' }]);
+            typeAssistantMessage(id, '답변을 받지 못했어요. 다시 시도해주세요.');
+          }
+          isProcessingRef.current = false;
+          setIsProcessing(false);
+        };
+        if (wait > 0) {
+          const t = setTimeout(finalize, wait);
+          typingTimersRef.current.push(t);
+        } else {
+          finalize();
+        }
       }
     },
     [routeId, currentDpId, typeAssistantMessage, dpById],
@@ -344,6 +373,7 @@ export default function AssistantBottomSheet({
                   <ChatBubble text={m.text} isUser={m.role === 'user'} />
                 </View>
               ))}
+              {isProcessing && <TypingIndicator />}
             </ScrollView>
           </View>
 

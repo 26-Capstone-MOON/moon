@@ -2,7 +2,7 @@ import { toCamelCase } from '../utils/caseConverter';
 import type { ApiResponse } from '../types/api';
 import type { Location } from '../types/route';
 
-const BASE_URL = 'http://10.0.2.2:8080/api';
+const BASE_URL = 'http://localhost:8080/api';
 const USE_MOCK = false;
 
 // --- Mock Responses ---
