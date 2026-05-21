@@ -772,6 +772,7 @@ export default function NavigationScreen({ navigation, route }: Props) {
                           currentDP.selectedLandmark?.location?.latitude ?? null,
                           currentDP.selectedLandmark?.location?.longitude ?? null,
                         ),
+                        baseUrl: 'https://backend-production-1a0a.up.railway.app',
                       }}
                       style={styles.panoramaImage}
                       scrollEnabled={false}
