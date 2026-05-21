@@ -1,6 +1,6 @@
 import type { DecisionPoint } from '../types/route';
 
-const NCP_CLIENT_ID = 'p1w5pdggbh';
+const NCP_KEY_ID = '4gswjhkwyh';
 
 export function buildPanoramaHtml(
   lat: number, lng: number, pan: number,
@@ -24,7 +24,7 @@ var marker=new naver.maps.Marker({
   return `<!DOCTYPE html>
 <html><head>
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
-<script src="https://oapi.map.naver.com/openapi/v3/maps.js?ncpClientId=${NCP_CLIENT_ID}&submodules=panorama"></script>
+<script src="https://oapi.map.naver.com/openapi/v3/maps.js?ncpKeyId=${NCP_KEY_ID}&submodules=panorama"></script>
 <style>*{margin:0;padding:0}html,body,#pano{width:100%;height:100%;overflow:hidden}</style>
 </head><body>
 <div id="pano"></div>

@@ -357,6 +357,7 @@ export default function AssistantBottomSheet({
                             m.panorama.landmarkLat,
                             m.panorama.landmarkLng,
                           ),
+                          baseUrl: 'https://backend-production-1a0a.up.railway.app',
                         }}
                         style={styles.panoramaWebview}
                         scrollEnabled={false}
