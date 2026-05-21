@@ -201,7 +201,7 @@ export default function NavigationScreen({ navigation, route }: Props) {
   }, [updateFromTracking, setRouteData]);
 
   const { connectionState, send, connect, disconnect } = useWebSocket({
-    url: 'ws://localhost:8080/api/tracking',
+    url: 'wss://backend-production-1a0a.up.railway.app/api/tracking',
     onMessage: handleWsMessage,
     onError: (msg) => showError(msg),
   });

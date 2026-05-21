@@ -1,0 +1,8 @@
+[build]
+builder = "NIXPACKS"
+buildCommand = "sh ./gradlew bootJar -x test"
+
+[deploy]
+startCommand = "java -jar build/libs/backend-0.0.1-SNAPSHOT.jar --server.port=$PORT"
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 3

@@ -52,6 +52,24 @@ def _should_show_panorama(question: str) -> bool:
     return any(kw in question for kw in _PANORAMA_KEYWORDS)
 
 
+def _find_appearance(
+    route: RouteResponse,
+    current_dp_id: Optional[str],
+) -> Optional[str]:
+    """현재 DP의 appearance를 찾고, 없으면 이후 DP에서 첫 appearance를 찾는다."""
+    dps = route.decision_points
+    start_idx = 0
+    if current_dp_id:
+        for i, dp in enumerate(dps):
+            if dp.dp_id == current_dp_id:
+                start_idx = i
+                break
+    for dp in dps[start_idx:]:
+        if dp.selected_landmark and dp.selected_landmark.appearance:
+            return dp.selected_landmark.appearance
+    return None
+
+
 # ---------------------------------------------------------------------------
 # Progress label
 # ---------------------------------------------------------------------------
@@ -288,6 +306,19 @@ async def chat(
     경로 컨텍스트를 시스템 프롬프트에 주입해 단일 OpenAI 호출로 응답한다.
     분류기를 두지 않고 프롬프트의 유형 가이드만으로 분기한다.
     """
+    show_panorama = _should_show_panorama(request.question)
+
+    # 외관 질문은 LLM을 거치지 않고 mock의 appearance 문자열을 그대로 반환한다.
+    # LLM이 paraphrasing해서 mock 원문이 변형되는 것을 방지.
+    if show_panorama:
+        appearance = _find_appearance(route, request.current_dp_id)
+        if appearance:
+            return ConversationResponse(
+                answer=appearance,
+                show_panorama=True,
+                target_dp_id=request.current_dp_id,
+            )
+
     route_context = _build_route_context(route, request.current_dp_id, completed_dp_ids)
     system_prompt = _SYSTEM_PROMPT_TEMPLATE.format(route_context=route_context)
 
@@ -318,7 +349,6 @@ async def chat(
         logger.error("OpenAI API call failed: %s", exc)
         answer = _FALLBACK_ANSWER
 
-    show_panorama = _should_show_panorama(request.question)
     target_dp_id = request.current_dp_id if show_panorama else None
 
     return ConversationResponse(
