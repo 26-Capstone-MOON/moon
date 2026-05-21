@@ -22,7 +22,7 @@ from pathlib import Path
 import httpx
 
 API_URL = "http://localhost:8000/api/route"
-NAVER_CLIENT_ID = "p1w5pdggbh"
+NAVER_KEY_ID = "4gswjhkwyh"
 
 
 def fetch_route(
@@ -136,7 +136,7 @@ def build_html(route: dict) -> str:
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Pipeline Report — {dest_name or route_id}</title>
-    <script src="https://oapi.map.naver.com/openapi/v3/maps.js?ncpClientId={NAVER_CLIENT_ID}&submodules=panorama"></script>
+    <script src="https://oapi.map.naver.com/openapi/v3/maps.js?ncpKeyId={NAVER_KEY_ID}&submodules=panorama"></script>
     <style>
         * {{ margin:0; padding:0; box-sizing:border-box; }}
         body {{ font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; background:#f5f5f5; color:#333; }}

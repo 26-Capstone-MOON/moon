@@ -211,6 +211,7 @@ export default function ProgressScreen({ navigation, route }: Props) {
                             dp.selectedLandmark?.location?.latitude ?? null,
                             dp.selectedLandmark?.location?.longitude ?? null,
                           ),
+                          baseUrl: 'https://backend-production-1a0a.up.railway.app',
                         }}
                         style={styles.panoWebView}
                         scrollEnabled={true}
