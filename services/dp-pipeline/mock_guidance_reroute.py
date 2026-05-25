@@ -19,12 +19,15 @@ route_id 재발급이나 외부 curl 단독 테스트에도 견고하다.
 from __future__ import annotations
 
 import logging
+import uuid
 
 from geo import haversine
 from schemas import (
     DecisionPoint,
     Guidance,
     Location,
+    PanoramaDirection,
+    PanoramaRequest,
     RouteResponse,
     SelectedLandmark,
 )
@@ -42,6 +45,11 @@ REROUTE_ZONE_CENTER_LAT = 37.5038819
 REROUTE_ZONE_CENTER_LNG = 127.0236635
 REROUTE_ZONE_RADIUS_M = 50.0
 
+# Tmap이 reroute에 대해 줄 것으로 예상되는 pipeline DP 개수
+# (DEPARTURE + DIRECTION_CHANGE(공차?) + ARRIVAL = 3)
+# 이 값과 일치할 때만 _insert_extra_dps_reroute로 VIRTUAL CU를 강제 삽입.
+_EXPECTED_REROUTE_PIPELINE_DP_COUNT = 3
+
 # === Mock 데이터 ===
 # 비어있는 상태로 시작. Phase 3 이후 별도 작업으로
 # 실제 새 경로 DP 구성에 맞춰 채울 것.
@@ -50,11 +58,11 @@ REROUTE_MOCK_GUIDANCES: list[dict] = [
     # DP0 — DEPARTURE (이탈 zone에서 출발, CU까지 직진)
     {
         "dp_type": "DEPARTURE",
-        "landmark_name": None,
-        "landmark_lat": None,
-        "landmark_lng": None,
-        "dp_marker_lat": 37.5038819,
-        "dp_marker_lng": 127.0236635,
+        "landmark_name": "투썸플레이스 교보타워사거리점",
+        "landmark_lat": 37.503756,
+        "landmark_lng": 127.023631,
+        "dp_marker_lat": 37.503761,
+        "dp_marker_lng": 127.023710,
         "pan_override": None,
         "primary": "현재 위치에서 출발합니다. CU 서초유앤아이점까지 직진하세요.",
         "pre_alert": None,
@@ -65,29 +73,29 @@ REROUTE_MOCK_GUIDANCES: list[dict] = [
     {
         "dp_type": "VIRTUAL",
         "landmark_name": "CU 서초유앤아이점",
-        "landmark_lat": 37.503269,
-        "landmark_lng": 127.023860,
-        "dp_marker_lat": 37.503269,
-        "dp_marker_lng": 127.023860,
+        "landmark_lat": 37.503234,
+        "landmark_lng": 127.023710,
+        "dp_marker_lat": 37.503306,
+        "dp_marker_lng": 127.023886,
         "pan_override": None,
-        "primary": "왼쪽에 CU 서초유앤아이점이 보이면 잘 가고 있는 거예요. 공차 교보타워점까지 계속 직진하세요.",
+        "primary": "편의점 CU를 오른쪽에 두고 카페 공차까지 직진하세요.",
         "pre_alert": None,
         "action": None,
-        "appearance": "보라색 간판에 흰색 'CU' 간판이 보입니다. 적갈색 상가 건물 1층에 있습니다.",
+        "appearance": "보라색 간판에 'Nice to CU'가 쓰여져 있는 편의점입니다.",
     },
     # DP2 — 공차 교보타워점 (DIRECTION_CHANGE, 우회전)
     {
         "dp_type": "DIRECTION_CHANGE",
         "landmark_name": "공차 교보타워점",
-        "landmark_lat": 37.502568,
-        "landmark_lng": 127.024216,
+        "landmark_lat": 37.502569,
+        "landmark_lng": 127.024151,
         "dp_marker_lat": 37.502568,
         "dp_marker_lng": 127.024216,
         "pan_override": None,
-        "primary": "공차 교보타워점을 끼고 오른쪽으로 도세요.",
-        "pre_alert": "조금 있으면 오른쪽에 공차 교보타워점이 보일 거예요.",
+        "primary": "공차 앞 계단을 따라 내려간 뒤 우회전하세요. 우회전 후 스타벅스까지 직진입니다.",
+        "pre_alert": "곧 오른쪽에 카페 공차가 보여요. 우회전을 준비하세요.",
         "action": "RIGHT_TURN",
-        "appearance": "검은색 배경에 흰색으로 'Gong cha'가 쓰여진 간판의 카페입니다. 통유리 외벽의 큰 건물 모서리에 입구가 있습니다.",
+        "appearance": "회색 대리석 간판에 흰색 글씨로 'Gong Cha'가 쓰여져 있는 카페입니다.",
     },
     # DP3 — 스타벅스 강남에비뉴점 (ARRIVAL, 도착)
     {
@@ -98,10 +106,28 @@ REROUTE_MOCK_GUIDANCES: list[dict] = [
         "dp_marker_lat": 37.502550,
         "dp_marker_lng": 127.024091,
         "pan_override": None,
-        "primary": "목적지 스타벅스 강남에비뉴점에 도착했습니다!",
+        "primary": "목적지 스타벅스 강남에비뉴점에 도착했습니다. 안내를 종료합니다.",
         "pre_alert": None,
         "action": None,
         "appearance": "초록색 스타벅스 로고와 흰색 글씨로 'STARBUCKS'가 쓰여져 있는 카페입니다. 통유리로 된 건물 1층에 있습니다.",
+    },
+]
+
+# ---------------------------------------------------------------------------
+# Extra DP insertion specs.
+# Tmap이 reroute에 대해 만들어주지 않는 VIRTUAL CU DP를 강제 삽입.
+# mock_guidance_final.py의 _EXTRA_INSERT_SPECS와 동일한 스키마.
+# ---------------------------------------------------------------------------
+
+_REROUTE_EXTRA_INSERT_SPECS: list[dict] = [
+    # CU 서초유앤아이점 VIRTUAL — pipeline DP0(DEPARTURE)와 DP1(공차/ARRIVAL) 사이에 삽입
+    {
+        "mock_index": 1,
+        "dp_type": "VIRTUAL",
+        "before_pipeline": 0,
+        "after_pipeline": 1,
+        "fixed_lat": 37.503306,
+        "fixed_lng": 127.023886,
     },
 ]
 
@@ -161,24 +187,41 @@ def apply_mock_guidance(
         )
         return route_response
 
-    # 3. 매칭 성공 → 단순 1:1 인덱스 매핑으로 덮어쓰기
+    # 3. 매칭 성공 → DP 개수에 따라 분기
     dps = route_response.decision_points
     n_pipeline = len(dps)
     n_mock = len(REROUTE_MOCK_GUIDANCES)
+    n_extra = len(_REROUTE_EXTRA_INSERT_SPECS)
 
     logger.info(
-        "[MOCK_REROUTE] Reroute demo matched! Pipeline DPs=%d, Mock entries=%d",
-        n_pipeline, n_mock,
+        "[MOCK_REROUTE] Reroute demo matched! Pipeline DPs=%d, Mock entries=%d "
+        "(expected_pipeline=%d, extra=%d)",
+        n_pipeline, n_mock, _EXPECTED_REROUTE_PIPELINE_DP_COUNT, n_extra,
     )
 
-    if n_pipeline != n_mock:
+    if n_pipeline == _EXPECTED_REROUTE_PIPELINE_DP_COUNT:
+        # 예상대로 3개 → VIRTUAL CU 강제 삽입해서 4개로 정렬
+        logger.info(
+            "[MOCK_REROUTE] Pipeline DPs=%d matches expected — inserting %d extra DP(s)",
+            n_pipeline, n_extra,
+        )
+        _insert_extra_dps_reroute(route_response)
+    elif n_pipeline == n_mock:
+        # 이미 mock 개수와 일치 → 삽입 skip
+        logger.info(
+            "[MOCK_REROUTE] Pipeline DPs=%d already matches mock count — skipping insert",
+            n_pipeline,
+        )
+    else:
+        # 예상치 못한 개수 → fallback (가능한 만큼만 매핑)
         logger.warning(
-            "[MOCK_REROUTE] DP count mismatch (pipeline=%d, mock=%d) "
-            "— overwriting only first %d DPs, rest will keep original guidance",
+            "[MOCK_REROUTE] Unexpected DP count (pipeline=%d, mock=%d) "
+            "— overwriting first %d DPs only, rest keep original guidance",
             n_pipeline, n_mock, min(n_pipeline, n_mock),
         )
 
-    _overwrite_guidance(dps, REROUTE_MOCK_GUIDANCES)
+    # 4. 인덱스 정렬 완료 → 1:1 덮어쓰기
+    _overwrite_guidance(route_response.decision_points, REROUTE_MOCK_GUIDANCES)
 
     return route_response
 
@@ -257,4 +300,72 @@ def _overwrite_guidance(
             i, dps[i].dp_type, lm_name or "null",
             pan_val if pan_val is not None else "none",
             mock["primary"][:40],
+        )
+
+
+def _insert_extra_dps_reroute(route_response: RouteResponse) -> None:
+    """Insert extra DPs (any dp_type) at predefined positions between pipeline DPs.
+
+    mock_guidance_final._insert_extra_dps와 동일 패턴 (prefix만 [MOCK_REROUTE]).
+
+    Inserts are done in reverse order (highest before_pipeline first) so that
+    earlier indices remain valid after each insertion.
+
+    Coordinates: midpoint of surrounding DPs, unless fixed_lat/fixed_lng specified.
+    distance_from_start: always interpolated from surrounding DPs.
+    dp_type: taken from spec["dp_type"] (not hardcoded).
+    """
+    dps = route_response.decision_points
+
+    # Sort specs by before_pipeline descending so insertions don't shift indices
+    specs = sorted(
+        _REROUTE_EXTRA_INSERT_SPECS,
+        key=lambda s: (s["before_pipeline"], s["mock_index"]),
+        reverse=True,
+    )
+
+    for spec in specs:
+        before_idx = spec["before_pipeline"]
+        after_idx = spec["after_pipeline"]
+        mock_idx = spec["mock_index"]
+        dp_type = spec["dp_type"]
+
+        if before_idx >= len(dps) or after_idx >= len(dps):
+            logger.warning(
+                "[MOCK_REROUTE] Cannot insert %s at mock_index=%d: "
+                "pipeline has only %d DPs (need indices %d and %d)",
+                dp_type, mock_idx, len(dps), before_idx, after_idx,
+            )
+            continue
+
+        dp_before = dps[before_idx]
+        dp_after = dps[after_idx]
+
+        # Use hardcoded coordinates if specified, otherwise midpoint
+        vdp_lat = spec.get("fixed_lat")
+        vdp_lng = spec.get("fixed_lng")
+        if vdp_lat is None or vdp_lng is None:
+            vdp_lat = (dp_before.location.latitude + dp_after.location.latitude) / 2
+            vdp_lng = (dp_before.location.longitude + dp_after.location.longitude) / 2
+
+        mid_dist = (dp_before.distance_from_start + dp_after.distance_from_start) / 2
+
+        extra_dp = DecisionPoint(
+            dp_id=f"dp-extra-mock-{uuid.uuid4().hex[:6]}",
+            dp_type=dp_type,
+            turn_type=None,
+            location=Location(latitude=vdp_lat, longitude=vdp_lng),
+            distance_from_start=mid_dist,
+            guidance=Guidance(primary="", pre_alert=None, action=None),
+            panorama_request=PanoramaRequest(
+                location=Location(latitude=vdp_lat, longitude=vdp_lng),
+                directions=[PanoramaDirection(pan=0.0, label="FRONT", is_primary=True)],
+            ),
+        )
+
+        insert_pos = after_idx  # insert before the "after" DP
+        dps.insert(insert_pos, extra_dp)
+        logger.info(
+            "[MOCK_REROUTE] Inserted %s DP at index %d (mock_index=%d, lat=%.6f, lng=%.6f, dist=%.0fm)",
+            dp_type, insert_pos, mock_idx, vdp_lat, vdp_lng, mid_dist,
         )
