@@ -1039,6 +1039,20 @@ async def reroute_endpoint(request: RerouteRequest) -> ApiResponse:
     result = await reroute_service(request, previous_dps=previous_dps)
 
     if result.success and result.route_response is not None:
+        # === [추가] mock_guidance_reroute 후처리 ===
+        from config import MOCK_GUIDANCE
+        if MOCK_GUIDANCE:
+            from mock_guidance_reroute import apply_mock_guidance as apply_mock_guidance_reroute
+            result.route_response = apply_mock_guidance_reroute(
+                result.route_response,
+                result.route_response.origin,
+                result.route_response.destination,
+            )
+
+        # === [추가] TTS 부착 (mock 적용 후 새 안내문에 대해 음성 합성) ===
+        result.route_response = await _attach_tts_audio(result.route_response)
+        # === [추가 끝] ===
+
         new_route_id = result.route_response.route_id
         # Cache the new route
         _route_cache[new_route_id] = result.route_response
