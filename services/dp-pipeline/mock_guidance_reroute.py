@@ -64,7 +64,7 @@ REROUTE_MOCK_GUIDANCES: list[dict] = [
         "dp_marker_lat": 37.503761,
         "dp_marker_lng": 127.023710,
         "pan_override": 162.94,
-        "primary": "현재 위치에서 출발합니다. CU 서초유앤아이점까지 직진하세요.",
+        "primary": "현재 위치에서 출발합니다. 편의점 CU까지 직진하세요.",
         "pre_alert": None,
         "action": None,
         "appearance": None,
