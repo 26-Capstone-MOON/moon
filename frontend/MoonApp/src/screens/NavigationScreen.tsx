@@ -18,7 +18,12 @@ import BottomSheet, { BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import Reanimated, { useAnimatedStyle, useSharedValue, withTiming, interpolate, Extrapolation } from 'react-native-reanimated';
 import { COLORS } from '../constants/colors';
-import { speak as ttsSpeak, stop as ttsStop } from '../services/ttsService';
+import {
+  speak as ttsSpeak,
+  stop as ttsStop,
+  getCachedGuidanceAudio,
+  prefetchGuidanceAudio,
+} from '../services/ttsService';
 import { vibrateApproach, vibrateArrival, vibrateTurn } from '../services/hapticService';
 import { MOCK_ROUTE_RESPONSE } from '../mocks/mockRoute';
 import { useRouteStore } from '../stores/useRouteStore';
@@ -255,6 +260,26 @@ export default function NavigationScreen({ navigation, route }: Props) {
     }
   }, [localIndex, currentDP, setCurrentDp]);
 
+  useEffect(() => {
+    const routeId = routeData?.routeId;
+    if (!routeId) { return; }
+
+    prefetchGuidanceAudio([
+      {
+        routeId,
+        dpId: currentDP?.dpId ?? '',
+        type: 'primary',
+        text: currentDP?.guidance?.primary,
+      },
+      {
+        routeId,
+        dpId: nextDP?.dpId ?? '',
+        type: 'preAlert',
+        text: nextDP?.guidance?.preAlert,
+      },
+    ]).catch(err => console.warn('[TTS] prefetch failed:', err));
+  }, [routeData?.routeId, currentDP, nextDP]);
+
   // Haptic on DP change
   useEffect(() => {
     if (!currentDP || !isNavigating) { return; }
@@ -409,18 +434,22 @@ export default function NavigationScreen({ navigation, route }: Props) {
     console.log('[TTS] trigger 감지:', trigger, '/ dpId:', currentDpId);
     let text: string | null = null;
     let audio: string | null = null;
+    let audioType: 'primary' | 'preAlert' | null = null;
     switch (trigger) {
       case 'PRE_ALERT':
         text = guidance?.preAlert ?? guidance?.primary ?? null;
         audio = guidance?.preAlertAudio ?? guidance?.primaryAudio ?? null;
+        audioType = guidance?.preAlert ? 'preAlert' : 'primary';
         break;
       case 'ARRIVAL':
         text = guidance?.primary ?? null;
         audio = guidance?.primaryAudio ?? null;
+        audioType = 'primary';
         break;
       case 'CONFIRMATION':
         text = guidance?.primary ?? '잘 가고 있어요';
         audio = guidance?.primaryAudio ?? null;
+        audioType = 'primary';
         break;
       case 'DEVIATION_WARNING':
         text = '경로를 벗어난 것 같아요';
@@ -434,15 +463,20 @@ export default function NavigationScreen({ navigation, route }: Props) {
     }
     if (text) {
       lastSpokenKey.current = spokenKey;
+      const cachedAudio = audio ?? (
+        audioType
+          ? getCachedGuidanceAudio(routeData?.routeId, currentDpId, audioType)
+          : null
+      );
       console.log('[TTS] 재생:', text, audio ? '(Google TTS)' : '(device TTS)');
       if (ttsEnabled && !isAssistantOpenRef.current) {
         ttsStop();
-        ttsSpeak(text, audio);
+        ttsSpeak(text, cachedAudio);
       } else if (isAssistantOpenRef.current) {
         console.log('[TTS] 어시스턴트 열림 → 자동 안내 TTS 스킵');
       }
     }
-  }, [trigger, guidance, currentDpId, ttsEnabled, isRerouting]);
+  }, [trigger, guidance, currentDpId, ttsEnabled, isRerouting, routeData?.routeId]);
 
   // Sync localIndex from server's currentDpId.
   // Card advance (idx > localIndex) only fires on ARRIVAL/CONFIRMATION trigger.
