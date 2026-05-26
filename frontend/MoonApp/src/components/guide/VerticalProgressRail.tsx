@@ -81,10 +81,9 @@ const styles = StyleSheet.create({
   container: {
     position: 'absolute',
     left: 12,
-    top: '50%',
-    transform: [{ translateY: -120 }],
+    top: 16,
     width: 14,
-    height: 240,
+    height: 220,
     alignItems: 'center',
     flexDirection: 'column',
   },
