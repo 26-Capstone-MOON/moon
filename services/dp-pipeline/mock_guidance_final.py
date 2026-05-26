@@ -132,6 +132,7 @@ MOCK_GUIDANCES: list[dict] = [
         "pre_alert": None,
         "action": None,
         "appearance": "초록색 스타벅스 로고와 흰색 글씨로 'STARBUCKS'가 쓰여져 있는 카페입니다. 통유리로 된 건물 1층에 있습니다.",
+        "position_confirm": "네. 왼쪽에 편의점 CU가 보이면 잘 가고 계신 거예요. 조금만 더 가면 목적지 스타벅스 강남에비뉴점이 나옵니다.",
     },
 ]
 
@@ -269,6 +270,7 @@ def _overwrite_guidance(
                 is_open=True,
                 location=lm_location,
                 appearance=mock.get("appearance"),
+                position_confirm=mock.get("position_confirm"),
             )
         else:
             dps[i].selected_landmark = None

@@ -1,6 +1,16 @@
 import Tts from 'react-native-tts';
 import Sound from 'react-native-sound';
 import RNFS from 'react-native-fs';
+import { BASE_URL } from './routeService';
+
+type GuidanceAudioType = 'primary' | 'preAlert';
+
+interface PrefetchGuidanceAudioItem {
+  routeId: string;
+  dpId: string;
+  type: GuidanceAudioType;
+  text?: string | null;
+}
 
 // ---------------------------------------------------------------------------
 // react-native-tts fallback init
@@ -30,6 +40,8 @@ async function init() {
 // ---------------------------------------------------------------------------
 
 let currentSound: Sound | null = null;
+const audioCache = new Map<string, string>();
+const inFlightRequests = new Map<string, Promise<string | null>>();
 
 function stopCurrentSound() {
   if (currentSound) {
@@ -37,6 +49,68 @@ function stopCurrentSound() {
     currentSound.release();
     currentSound = null;
   }
+}
+
+export function guidanceAudioCacheKey(routeId: string, dpId: string, type: GuidanceAudioType): string {
+  return `${routeId}:${dpId}:${type}`;
+}
+
+export function getCachedGuidanceAudio(
+  routeId: string | null | undefined,
+  dpId: string | null | undefined,
+  type: GuidanceAudioType,
+): string | null {
+  if (!routeId || !dpId) { return null; }
+  return audioCache.get(guidanceAudioCacheKey(routeId, dpId, type)) ?? null;
+}
+
+async function fetchGuidanceAudio(cacheKey: string, text: string): Promise<string | null> {
+  const cached = audioCache.get(cacheKey);
+  if (cached) { return cached; }
+
+  const inFlight = inFlightRequests.get(cacheKey);
+  if (inFlight) { return inFlight; }
+
+  const request = fetch(`${BASE_URL}/tts?text=${encodeURIComponent(text)}`)
+    .then(async (res) => {
+      if (!res.ok) {
+        console.warn('[TTS] remote synth failed:', res.status);
+        return null;
+      }
+      const data = await res.json();
+      const audio = data?.audio;
+      if (typeof audio === 'string' && audio.length > 0) {
+        audioCache.set(cacheKey, audio);
+        return audio;
+      }
+      return null;
+    })
+    .catch((e) => {
+      console.warn('[TTS] remote synth request failed:', e);
+      return null;
+    })
+    .finally(() => {
+      inFlightRequests.delete(cacheKey);
+    });
+
+  inFlightRequests.set(cacheKey, request);
+  return request;
+}
+
+export async function prefetchGuidanceAudio(items: PrefetchGuidanceAudioItem[]): Promise<void> {
+  const uniqueItems = new Map<string, PrefetchGuidanceAudioItem>();
+  for (const item of items) {
+    if (!item.routeId || !item.dpId || !item.text) { continue; }
+    const cacheKey = guidanceAudioCacheKey(item.routeId, item.dpId, item.type);
+    if (audioCache.has(cacheKey)) { continue; }
+    uniqueItems.set(cacheKey, item);
+  }
+
+  await Promise.all(
+    Array.from(uniqueItems.entries()).map(([cacheKey, item]) =>
+      fetchGuidanceAudio(cacheKey, item.text as string),
+    ),
+  );
 }
 
 // ---------------------------------------------------------------------------

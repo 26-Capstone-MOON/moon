@@ -54,6 +54,7 @@ class SelectedLandmark(BaseModel):
     is_open: bool = True
     location: Optional[Location] = None  # POI coordinates (from Kakao API)
     appearance: Optional[str] = None  # Visual description for LLM context (Mode B chat)
+    position_confirm: Optional[str] = None  # Deterministic answer for Mode B position-confirm questions
 
 
 # ---------------------------------------------------------------------------

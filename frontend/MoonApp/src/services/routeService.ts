@@ -5,7 +5,7 @@ import type { RouteData } from '../types/route';
 import type { ApiResponse } from '../types/api';
 import type { Place } from '../types/navigation';
 
-const BASE_URL = 'https://backend-production-1a0a.up.railway.app/api';
+export const BASE_URL = 'https://backend-production-1a0a.up.railway.app/api';
 const USE_MOCK = false;
 
 /** Extract route data from various response shapes (double-wrapped, flat, etc.) */
