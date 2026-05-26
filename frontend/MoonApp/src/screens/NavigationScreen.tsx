@@ -35,6 +35,7 @@ import RoutePolyline from '../components/map/RoutePolyline';
 import DpMarker from '../components/map/DpMarker';
 import CurrentLocationMarker from '../components/map/CurrentLocationMarker';
 import DeviationBanner from '../components/guide/DeviationBanner';
+import VerticalProgressRail from '../components/guide/VerticalProgressRail';
 import ErrorToast from '../components/common/ErrorToast';
 import LoadingOverlay from '../components/common/LoadingOverlay';
 import AssistantBottomSheet from '../components/chat/AssistantBottomSheet';
@@ -752,6 +753,9 @@ export default function NavigationScreen({ navigation, route }: Props) {
                 longitude={position?.longitude ?? currentDP.location.longitude}
               />
             </MapView>
+
+            {/* Vertical progress rail (visual only, pointerEvents disabled) */}
+            <VerticalProgressRail dpList={dpList} currentIndex={localIndex} />
 
             {/* Re-center button — shown when user pans/zooms away */}
             {!isFollowing && (
