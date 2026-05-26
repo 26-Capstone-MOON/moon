@@ -437,9 +437,9 @@ export default function NavigationScreen({ navigation, route }: Props) {
     let audioType: 'primary' | 'preAlert' | null = null;
     switch (trigger) {
       case 'PRE_ALERT':
-        text = guidance?.preAlert ?? guidance?.primary ?? null;
-        audio = guidance?.preAlertAudio ?? guidance?.primaryAudio ?? null;
-        audioType = guidance?.preAlert ? 'preAlert' : 'primary';
+        text = guidance?.preAlert ?? null;
+        audio = guidance?.preAlertAudio ?? null;
+        audioType = 'preAlert';
         break;
       case 'ARRIVAL':
         text = guidance?.primary ?? null;
