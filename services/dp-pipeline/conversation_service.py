@@ -46,10 +46,25 @@ _PANORAMA_KEYWORDS = (
     "저 건물",
 )
 
+# 사용자가 현재 경로 진행 여부를 확인하는 질문일 때 deterministic 응답 트리거
+_POSITION_CONFIRM_KEYWORDS = (
+    "잘 가고 있",
+    "잘 가고 계",
+    "맞게 가고 있",
+    "이 길 맞",
+    "제대로 가고 있",
+    "거 맞아",
+)
+
 
 def _should_show_panorama(question: str) -> bool:
     """질문에 외관·모습 관련 키워드가 포함되어 있으면 파노라마 표시."""
     return any(kw in question for kw in _PANORAMA_KEYWORDS)
+
+
+def _should_confirm_position(question: str) -> bool:
+    """질문에 위치확인 키워드가 포함되어 있으면 정형 답변 분기."""
+    return any(kw in question for kw in _POSITION_CONFIRM_KEYWORDS)
 
 
 def _find_appearance(
@@ -67,6 +82,24 @@ def _find_appearance(
     for dp in dps[start_idx:]:
         if dp.selected_landmark and dp.selected_landmark.appearance:
             return dp.selected_landmark.appearance
+    return None
+
+
+def _find_position_confirm(
+    route: RouteResponse,
+    current_dp_id: Optional[str],
+) -> Optional[str]:
+    """현재 DP의 position_confirm 문구를 찾고, 없으면 이후 DP에서 첫 값을 찾는다."""
+    dps = route.decision_points
+    start_idx = 0
+    if current_dp_id:
+        for i, dp in enumerate(dps):
+            if dp.dp_id == current_dp_id:
+                start_idx = i
+                break
+    for dp in dps[start_idx:]:
+        if dp.selected_landmark and dp.selected_landmark.position_confirm:
+            return dp.selected_landmark.position_confirm
     return None
 
 
@@ -317,6 +350,17 @@ async def chat(
                 answer=appearance,
                 show_panorama=True,
                 target_dp_id=request.current_dp_id,
+            )
+
+    # 위치확인 질문도 LLM을 거치지 않고 mock의 position_confirm 문자열을 그대로 반환한다.
+    # 외관과 동일한 패턴 — 시연 안정성을 위해 정형 답변 보장.
+    if _should_confirm_position(request.question):
+        confirm = _find_position_confirm(route, request.current_dp_id)
+        if confirm:
+            return ConversationResponse(
+                answer=confirm,
+                show_panorama=False,
+                target_dp_id=None,
             )
 
     route_context = _build_route_context(route, request.current_dp_id, completed_dp_ids)
