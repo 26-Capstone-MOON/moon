@@ -58,9 +58,9 @@ REROUTE_MOCK_GUIDANCES: list[dict] = [
     # DP0 — DEPARTURE (이탈 zone에서 출발, CU까지 직진)
     {
         "dp_type": "DEPARTURE",
-        "landmark_name": "투썸플레이스 교보타워사거리점",
-        "landmark_lat": 37.503756,
-        "landmark_lng": 127.023631,
+        "landmark_name": "이마트24 강남더인피닛점",
+        "landmark_lat": 37.503576,
+        "landmark_lng": 127.023703,
         "dp_marker_lat": 37.503761,
         "dp_marker_lng": 127.023710,
         "pan_override": 162.94,
