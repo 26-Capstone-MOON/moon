@@ -58,7 +58,7 @@ MOCK_GUIDANCES: list[dict] = [
         "dp_marker_lat": 37.504805,
         "dp_marker_lng": 127.025133,
         "pan_override": 328.5,
-        "primary": "버거킹 신논현역점에서 출발합니다. 버거킹을 오른쪽에 두고 카페 팀홀튼 앞 까지 직진하세요.",
+        "primary": "버거킹 신논현역점에서 출발합니다. \n버거킹을 오른쪽에 두고 카페 팀홀튼 앞 까지 직진하세요.",
         "pre_alert": None,
         "action": None,
         "appearance": "나무 간판에 흰색 글씨로 'BURGER KING'이 쓰여져 있는 패스트푸드점입니다. 통유리로 된 건물 1층에 있습니다.",
