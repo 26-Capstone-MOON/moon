@@ -92,7 +92,7 @@ REROUTE_MOCK_GUIDANCES: list[dict] = [
         "dp_marker_lat": 37.502568,
         "dp_marker_lng": 127.024216,
         "pan_override": None,
-        "primary": "공차 앞 계단을 따라 내려간 뒤 우회전하세요. \n우회전 후 스타벅스까지 직진입니다.",
+        "primary": "공차 앞 계단을 따라 내려간 뒤 우회전하세요. \n우회전 후 카페 스타벅스까지 직진입니다.",
         "pre_alert": "곧 오른쪽에 카페 공차가 보여요. 우회전을 준비하세요.",
         "action": "RIGHT_TURN",
         "appearance": "회색 대리석 간판에 흰색 글씨로 'Gong Cha'가 쓰여져 있는 카페입니다.",
