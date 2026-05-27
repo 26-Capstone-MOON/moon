@@ -151,6 +151,10 @@ __pycache__/
 # HTML artifacts
 *.html
 
+# PowerPoint files
+*.pptx
+~$*.pptx
+
 # Local dev smoke/scratch scripts (not part of the prod server)
 /services/dp-pipeline/smoke_navigation_check.py
 /services/dp-pipeline/test_demo_modeb.py
