@@ -80,7 +80,7 @@ MOCK_GUIDANCES: list[dict] = [
     # DP2: CROSSWALK (pipeline 2, was pipeline 3 before 아디다스 제거)
     {
         "dp_type": "CROSSWALK",
-        "landmark_name": "아디다스 강남브랜드센터",
+        "landmark_name": "교보타워",
         "landmark_lat": 37.504027,
         "landmark_lng": 127.024286,
         "dp_marker_lat": 37.504341,
