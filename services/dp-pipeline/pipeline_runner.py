@@ -17,13 +17,12 @@ from constants import (
     RIGHT_PRIMARY_TURN_TYPES,
     TURN_TYPE_TO_ACTION,
 )
+from candidate_service import search_candidates_for_crosswalk, search_candidates_for_dp
 from geo import point_to_segment_distance
 from guidance_generator import generate_guidance
 from places_service import fetch_is_open_statuses, poi_identity_key
 from poi_service import (
     PoiResult,
-    search_pois_for_crosswalk,
-    search_pois_for_dp,
 )
 from schemas import (
     DecisionPoint,
@@ -34,6 +33,7 @@ from schemas import (
 )
 from scoring_service import ScoredPoi, rank_pois, select_landmark
 from sequence_optimizer import optimize_sequence
+from vision_cache import visual_description
 
 
 # ---------------------------------------------------------------------------
@@ -134,6 +134,7 @@ def scored_from_selected_landmark(landmark: SelectedLandmark) -> ScoredPoi:
         u=0.0,
         d=0.0,
         s_final=landmark.score,
+        visual_context=landmark.visual_context,
     )
 
 
@@ -143,6 +144,7 @@ def build_selected_landmark(
 ) -> SelectedLandmark:
     """Serialize a scored POI into the public SelectedLandmark model."""
     is_open_status = resolve_is_open_status(scored.poi, is_open_map)
+    appearance = visual_description(scored.visual_context)
     return SelectedLandmark(
         name=scored.poi.place_name,
         category_code=scored.poi.category_group_code,
@@ -155,6 +157,8 @@ def build_selected_landmark(
             latitude=scored.poi.latitude,
             longitude=scored.poi.longitude,
         ),
+        appearance=appearance,
+        visual_context=scored.visual_context,
     )
 
 
@@ -167,6 +171,7 @@ async def run_pipeline_steps_3_to_5(
     route_coordinates: list[tuple[float, float]],
     dest_name: str = "",
     skip_dp_ids: set[str] | None = None,
+    route_id: str | None = None,
 ) -> None:
     """Run STEP 3 → STEP 4 → STEP 5 on a finalized DP list.
 
@@ -214,33 +219,47 @@ async def run_pipeline_steps_3_to_5(
         bearing = get_dp_bearing(dp, route_coordinates)
 
         if dp.dp_type == "CROSSWALK":
-            crosswalk_result = await search_pois_for_crosswalk(
+            crosswalk_result = await search_candidates_for_crosswalk(
                 dp.location.latitude,
                 dp.location.longitude,
                 bearing,
             )
+            before_pois = crosswalk_result.before
+            after_pois = crosswalk_result.after
             print(
                 f"  [STEP3] CROSSWALK dp={dp.dp_id}: "
-                f"before_pois={len(crosswalk_result.before)}, "
-                f"after_pois={len(crosswalk_result.after)}"
+                f"before_pois={len(before_pois)}, "
+                f"after_pois={len(after_pois)}"
             )
-            combined_pois = crosswalk_result.before + crosswalk_result.after
+            combined_pois = before_pois + after_pois
             is_open_map = (
                 await fetch_is_open_statuses(combined_pois)
                 if combined_pois
                 else {}
             )
-            before_ranked = rank_pois(crosswalk_result.before, is_open_map)
+            before_ranked = rank_pois(
+                before_pois,
+                is_open_map,
+                route_id=route_id,
+                dp_id=dp.dp_id,
+                dp_location=dp.location,
+            )
             after_best = (
-                select_landmark(crosswalk_result.after, is_open_map)
-                if crosswalk_result.after
+                select_landmark(
+                    after_pois,
+                    is_open_map,
+                    route_id=route_id,
+                    dp_id=dp.dp_id,
+                    dp_location=dp.location,
+                )
+                if after_pois
                 else None
             )
             dp_candidates.append(before_ranked)
             crosswalk_after_per_dp[dp.dp_id] = after_best
             is_open_per_dp[dp.dp_id] = is_open_map
         else:
-            pois = await search_pois_for_dp(
+            pois = await search_candidates_for_dp(
                 dp.location.latitude,
                 dp.location.longitude,
                 bearing,
@@ -252,7 +271,13 @@ async def run_pipeline_steps_3_to_5(
                     f"dist={p.distance:.0f}m pos={p.position}"
                 )
             is_open_map = await fetch_is_open_statuses(pois) if pois else {}
-            ranked = rank_pois(pois, is_open_map)
+            ranked = rank_pois(
+                pois,
+                is_open_map,
+                route_id=route_id,
+                dp_id=dp.dp_id,
+                dp_location=dp.location,
+            )
             dp_candidates.append(ranked)
             is_open_per_dp[dp.dp_id] = is_open_map
 
@@ -323,12 +348,19 @@ async def run_pipeline_steps_3_to_5(
             if next_tt is not None:
                 next_action = TURN_TYPE_TO_ACTION.get(next_tt)
 
+        environment_desc = visual_description(selected.visual_context) if selected else None
+        after_environment_desc = (
+            visual_description(after_scored.visual_context)
+            if after_scored
+            else None
+        )
+
         dp.guidance = generate_guidance(
             dp_type=dp.dp_type,
             turn_type=dp.turn_type,
             selected_landmark=selected,
             match_status="POI_ONLY" if selected else None,
-            environment_desc=None,
+            environment_desc=environment_desc,
             facility_visible=None,
             prev_landmark_name=prev_landmark_name,
             next_dp_distance=next_dp_distance,
@@ -337,7 +369,7 @@ async def run_pipeline_steps_3_to_5(
             next_action=next_action,
             after_landmark=after_scored,
             after_match_status="POI_ONLY" if after_scored else None,
-            after_environment_desc=None,
+            after_environment_desc=after_environment_desc,
             tmap_description=dp.tmap_description,
         )
 

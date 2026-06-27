@@ -59,7 +59,7 @@ const SCREEN_HEIGHT = Dimensions.get('window').height;
 const SHEET_HEIGHT = Math.round(SCREEN_HEIGHT * 0.6);
 const INITIAL_TEXT = '무엇을 도와드릴까요?';
 const TYPING_CHAR_DELAY_MS = 45;
-// 타이핑 인디케이터 최소 노출 시간. mock 응답이 즉시 와도 자연스러운
+// 타이핑 인디케이터 최소 노출 시간. 응답이 즉시 와도 자연스러운
 // "AI가 생각 중" 인상을 주기 위함. 실제 API가 더 걸리면 자연히 그만큼 유지됨.
 const MIN_INDICATOR_MS = 2000;
 

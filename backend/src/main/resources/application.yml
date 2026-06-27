@@ -5,12 +5,11 @@ logging:
   level:
     com.moonapp.navigation.controller.TrackingWebSocketHandler: DEBUG
 
-#spring:
-#   profiles:
-#     active: mock   # Python 서버 없이 테스트할 때 주석 해제
-
 services:
   python:
     base-url: ${PYTHON_SERVICE_URL:http://localhost:8000}
   deviation:
     base-url: ${PYTHON_SERVICE_URL:http://localhost:8000}
+  vision:
+    enabled: ${VISION_ENABLED:false}
+    max-payload-chars: ${VISION_MAX_PAYLOAD_CHARS:2200000}

@@ -21,11 +21,11 @@ STEP 1  경로 탐색 + DP 추출 (Tmap API)
   ↓
 STEP 2  Virtual DP 삽입 (장거리 직진 구간 보완)
   ↓
-STEP 3  POI 수집 (Kakao Local API)
+STEP 3  후보 수집·병합 (Kakao Local API + OSM Overpass API)
   ↓
-STEP 4  파노라마 요청 데이터 생성
+STEP 4  파노라마 요청 데이터 및 Vision cache 준비
   ↓
-STEP 5  스코어링 + 시퀀스 최적화
+STEP 5  스코어링 + Vision V 반영 + 시퀀스 최적화
   ↓
 STEP 6  안내문 생성
 ```
@@ -129,7 +129,7 @@ Virtual DP의 안내 유형은 위치 확인("국민은행이 보이면 잘 가�
 
 **② 후보 생성**: 해당 구간의 경로 LineString을 따라 **30m 고정 간격**으로 후보 지점을 생성한다. 경로 위의 정확한 좌표는 누적 거리 기준 선형 보간(interpolation)으로 구한다.
 
-**③ 후보별 POI 스코어링**: 각 후보에서 Kakao Local API로 POI를 검색하고, $(P \times h \times U) \times D$로 점수를 매긴다.
+**③ 후보별 POI 스코어링**: 각 후보에서 Kakao POI와 OSM 공간 요소를 검색하고, $(P \times h \times U) \times D$로 점수를 매긴다.
 
 **④ Greedy 선택**: 후보를 점수 내림차순으로 정렬한 뒤, 다음 조건을 만족하면 선택한다:
 - 양쪽 경계 DP로부터 최소 90m 이상 떨어짐
@@ -148,7 +148,7 @@ Virtual DP의 안내 유형은 위치 확인("국민은행이 보이면 잘 가�
 
 ---
 
-## 5. STEP 3: POI 수집
+## 5. STEP 3: 후보 수집·병합
 
 ### 5.1 적응형 반경 검색 (Adaptive Radius)
 
@@ -163,7 +163,13 @@ Virtual DP의 안내 유형은 위치 확인("국민은행이 보이면 잘 가�
 
 이 로직의 핵심은 **밀집 지역에서는 가까운 POI만, 한산한 지역에서는 넓게 탐색**하는 것이다. 강남역 앞에서 50m 반경으로 검색하면 수십 개가 나오지만, 주택가에서 50m로 검색하면 0개일 수 있다.
 
-### 5.2 좌/우 판별 알고리즘
+### 5.2 OSM 공간 요소 수집
+
+DP 주변 80m에서 Overpass API로 `leisure=park` 공원, `place=square` 광장, `bridge=yes` 또는 `man_made=bridge` 교량·육교, `railway=subway_entrance` 지하철 출입구를 조회한다. node 좌표와 way/relation 중심 좌표를 사용하며, 실제 이름 또는 식별 가능한 ref가 있는 요소만 최대 30건까지 `source=OSM` 후보로 정규화한다. 지하철 출입구의 ref는 역명·name 계열 태그와 조합 가능한 경우에만 사용한다.
+
+Kakao 후보와 OSM 후보는 이름·유형·근접 좌표를 기준으로 중복 제거한 뒤 같은 스코어링 흐름에 전달한다. Overpass 전체 요청은 2.5초로 제한하고, 오류·timeout·빈 응답이면 Kakao POI와 기존 Tmap 시설 후보만으로 계속 진행한다. 반복 조회는 DP 좌표 기반 120초 메모리 cache로 줄인다.
+
+### 5.3 좌/우 판별 알고리즘
 
 각 POI가 DP 기준으로 왼쪽·오른쪽·정면 어디에 있는지 판별한다.
 
@@ -182,7 +188,7 @@ $$\text{angle\_diff} = (\text{POI 방위각} - \text{진행 방위각} + 360°) 
 
 반대편 POI도 필터링하지 않고 방향 라벨만 부여한다. 예를 들어 진행 방향 기준 뒤쪽에 있는 POI도 LEFT/RIGHT로 분류되어 후보에 남는다 — 스코어링에서 거리(D)로 자연스럽게 걸러진다.
 
-### 5.3 횡단보도 특수 처리
+### 5.4 횡단보도 특수 처리
 
 CROSSWALK DP에서는 **횡단보도 전후 두 지점**에서 POI를 검색한다:
 - **before-crossing**: DP 위치 그대로
@@ -190,7 +196,7 @@ CROSSWALK DP에서는 **횡단보도 전후 두 지점**에서 POI를 검색한�
 
 이렇게 하면 "GS25 앞의 횡단보도를 건너서, 카페 방향으로 가세요" 같은 전후 맥락이 있는 안내가 가능하다.
 
-### 5.4 동일 카테고리 수 (Uniqueness 기초)
+### 5.5 동일 카테고리 수 (Uniqueness 기초)
 
 각 POI 주변 100m 내에서 같은 `category_group_code`를 가진 POI가 몇 개인지 센다. 이 값은 STEP 5에서 Uniqueness(U) 점수의 기초 데이터가 된다.
 
@@ -198,11 +204,11 @@ CROSSWALK DP에서는 **횡단보도 전후 두 지점**에서 POI를 검색한�
 
 ## 6. STEP 4: 파노라마 요청 데이터 생성
 
-각 DP에 대해 클라이언트가 Naver Panorama API를 호출할 때 필요한 좌표와 방향 정보를 생성한다. 생성된 파노라마 이미지는 이후 Vision AI 모델로 분석되어 안내문 생성 시 참고 정보로 활용된다.
+각 DP에 대해 클라이언트가 Naver Panorama API를 호출할 때 필요한 좌표와 방향 정보를 생성한다. 서버에 저장된 Vision 결과가 있으면 후보 POI의 시각 점수, 외관 설명, 주변 환경 컨텍스트로 재사용한다. Vision 결과가 없으면 기존 POI·시설·OSM 기반 안내 흐름을 그대로 유지한다.
 
 ### 6.1 3방향 촬영
 
-모든 DP에서 3방향을 촬영한다:
+모든 DP에서 3방향 요청 데이터를 생성한다:
 
 | 방향 | pan 계산 | 설명 |
 |---|---|---|
@@ -222,6 +228,10 @@ turnType에 따라 **Vision 모델이 주의를 집중할 방향**을 지정한�
 | 우회전 (13, 18, 19, 213, 216, 217) | RIGHT | 회전 후 보이는 방향 |
 | 직진·수직·Virtual 등 나머지 | FRONT | 진행 방향 |
 
+### 6.3 Vision 결과 병합
+
+`POST /route/{routeId}/panorama-results`로 들어온 구조화된 Vision 결과는 `routeId + dpId + direction + candidate` 기준으로 route cache에 병합된다. 가능한 경우 같은 DP의 후보 점수, 선택 랜드마크, 안내문을 다시 계산한다. 경로 생성 전부터 사용할 수 있는 사전 결과는 DP 좌표·방향·후보 식별자 기준 cache로 조회한다.
+
 ---
 
 ## 7. STEP 5: 스코어링 모델
@@ -231,6 +241,12 @@ turnType에 따라 **Vision 모델이 주의를 집중할 방향**을 지정한�
 각 DP에서 수집된 POI 중 가장 좋은 랜드마크를 선택하기 위한 점수를 계산한다.
 
 $$S_{\text{final}} = \underbrace{(P \times h \times U)}_{\text{내재적 가치}} \times \underbrace{D}_{\text{공간 적합성}}$$
+
+Vision 결과가 후보에 존재하면 아래 공식을 사용한다.
+
+$$S_{\text{final}} = \underbrace{(P \times h \times U \times V)}_{\text{내재적 가치 + 시각 점수}} \times \underbrace{D}_{\text{공간 적합성}}$$
+
+상점 후보의 `V`는 `color_distinctiveness × text_sign_ratio`, 건물 후보의 `V`는 `color_distinctiveness`로 계산한다. Vision 결과가 없거나 필요한 값이 없으면 기존 `(P × h × U) × D` 공식을 유지한다.
 
 모든 요소가 **곱셈**으로 결합된다. 어느 하나라도 0에 가까우면 전체 점수가 크게 떨어지는 **게이팅(gating) 효과**가 있다. 예를 들어 아무리 유명한 은행이라도 영업 종료(h=0.5)이면서 100m 거리(D≈0)이면 점수가 거의 0이 된다.
 
@@ -421,8 +437,9 @@ before-crossing과 after-crossing 두 랜드마크를 활용한다:
 | LineString 보간 | STEP 2 | 경로 위 특정 거리의 좌표 계산 |
 | turnType 필터링 | STEP 1 | Tmap 응답에서 DP 추출 |
 | 적응형 반경 검색 | STEP 3 | 지역 밀도에 맞는 POI 탐색 |
+| Overpass 공간 요소 수집 | STEP 3 | 공원·광장·교량/육교·지하철 출입구 후보 보완 |
 | 방위각 기반 좌/우 판별 | STEP 3, 4 | 랜드마크 위치 분류 |
-| 가중 곱셈 모델 | STEP 5 | $S = (P \times h \times U) \times D$ |
+| 가중 곱셈 모델 | STEP 5 | $S = (P \times h \times U) \times D$, Vision 결과가 있으면 $S = (P \times h \times U \times V) \times D$ |
 | 부분분류 오버라이드 | STEP 5 | 카테고리 내 세분화 (저축은행 등) |
 | 프랜차이즈 감지 | STEP 5 | 알려진 브랜드 P값 상향 |
 | Forward Greedy 중복 제거 | STEP 5 | 연속 DP의 랜드마크 중복 방지 |
@@ -442,5 +459,8 @@ before-crossing과 after-crossing 두 랜드마크를 활용한다:
 | POI_INITIAL_RADIUS | 50m | 기본 검색 반경 |
 | POI_RADIUS_EXPAND | 75m | 결과 0개 시 확대 |
 | POI_RADIUS_SHRINK | 30m | 결과 20개 이상 시 축소 |
+| OVERPASS_RADIUS_M | 80m | DP 주변 OSM 공간 요소 조회 반경 |
+| OVERPASS_HTTP_TIMEOUT_S | 2.5s | Overpass 전체 요청 제한 |
+| OVERPASS_RESULT_LIMIT | 30 | DP당 OSM 최대 결과 수 |
 | SWAP_SCORE_TOLERANCE | 0.20 | 지그재그 보정 시 허용 점수 하락률 |
 | EXCLUDED_TURN_TYPES | {1,2,3,4,5,6,7,11} | 안내 불필요한 직진 turnType |

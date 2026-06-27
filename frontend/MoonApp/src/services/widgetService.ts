@@ -34,7 +34,7 @@ export const updateWidget = (state: WidgetState): Promise<void> =>
 export const stopWidget = (): Promise<void> => NavigationNotification.stop();
 
 // Map a DecisionPoint to a widget arrow icon. Accepts both camelCase
-// (mock + frontend store) and snake_case (raw server payload) shapes.
+// frontend store and snake_case raw server payload shapes.
 export const dpTypeToArrowType = (dp: any): ArrowType => {
   if (!dp) { return 'straight'; }
   const dpType = dp.dpType ?? dp.dp_type;

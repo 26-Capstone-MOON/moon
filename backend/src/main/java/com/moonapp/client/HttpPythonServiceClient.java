@@ -11,7 +11,6 @@ import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
 
-import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
@@ -104,7 +103,7 @@ public class HttpPythonServiceClient implements PythonServiceClient {
 
     @Override
     public String uploadPanoramaResult(@NonNull String routeId, @NonNull String requestBody) {
-        return postJson("/api/route/{routeId}/panorama-results", routeId, requestBody);
+        return callPost(baseUrl, "/api/route/" + routeId + "/panorama-results", requestBody, ErrorCode.VISION_SERVICE_ERROR);
     }
 
     @Override
@@ -169,6 +168,27 @@ public class HttpPythonServiceClient implements PythonServiceClient {
                 webClient.post()
                     .uri(serviceBaseUrl + uri)
                     .bodyValue(requestBody)
+                    .retrieve()
+                    .bodyToMono(String.class)
+                    .block()
+            );
+        } catch (Exception exception) {
+            throw new CustomException(errorCode);
+        }
+    }
+
+    private String callPost(
+        @NonNull String serviceBaseUrl,
+        @NonNull String uri,
+        @NonNull String requestBody,
+        @NonNull ErrorCode errorCode
+    ) {
+        try {
+            return requireResponseBody(
+                webClient.post()
+                    .uri(serviceBaseUrl + uri)
+                    .contentType(Objects.requireNonNull(MediaType.APPLICATION_JSON))
+                    .bodyValue(Objects.requireNonNull(requestBody))
                     .retrieve()
                     .bodyToMono(String.class)
                     .block()

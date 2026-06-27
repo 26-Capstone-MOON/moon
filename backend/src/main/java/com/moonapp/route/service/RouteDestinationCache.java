@@ -1,6 +1,5 @@
 package com.moonapp.route.service;
 
-import com.moonapp.model.vo.Location;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;

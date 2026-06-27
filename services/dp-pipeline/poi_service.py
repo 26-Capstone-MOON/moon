@@ -27,7 +27,7 @@ CROSSWALK_AFTER_OFFSET_M = 30.0  # meters past crosswalk for after-crossing POI 
 
 @dataclass
 class PoiResult:
-    """A single POI from Kakao Local API with position and scoring info."""
+    """A normalized landmark candidate with position and scoring info."""
 
     place_name: str
     category_group_code: str
@@ -38,6 +38,10 @@ class PoiResult:
     position: str  # LEFT | RIGHT | FRONT
     p_value: float  # base P from CATEGORY_P_VALUES
     same_category_count_100m: int | None = None
+    source: str = "KAKAO"  # KAKAO | OSM (existing facility flow stays separate)
+    osm_type: str | None = None
+    osm_id: str | None = None
+    osm_tags: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass

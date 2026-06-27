@@ -1,9 +1,7 @@
-"""Local FastAPI app for mock and live dp-pipeline verification."""
+"""FastAPI app for the live MOON dp-pipeline."""
 
 from __future__ import annotations
 
-import hashlib
-import math
 import uuid
 from typing import Optional
 
@@ -13,15 +11,10 @@ from pydantic import BaseModel
 from constants import (
     ARRIVAL_DISTANCE,
     PRE_ALERT_DISTANCE,
-    VIRTUAL_DP_THRESHOLD,
 )
 from dp_extractor import extract_decision_points
 from geo import (
-    calculate_bearing,
     haversine,
-    interpolate_linestring,
-    interpolate_linestring_with_distance,
-    point_to_linestring_distance,
     project_distance_on_linestring,
 )
 from midpoint_service import insert_midpoints
@@ -40,12 +33,9 @@ from schemas import (
     GpsReading,
     Guidance,
     Location,
-    PanoramaDirection,
-    PanoramaRequest,
     Progress,
     RouteRequest,
     RouteResponse,
-    SelectedLandmark,
 )
 from tts_service import synthesize
 from pipeline_runner import (
@@ -53,6 +43,10 @@ from pipeline_runner import (
     run_pipeline_steps_3_to_5,
 )
 from tmap_service import request_pedestrian_route
+from config import settings
+from vision_schemas import VisionAnalysisData, VisionAnalysisStatus, VisionAnalyzeRequest
+from vision_service import analyze_panorama
+from vision_cache import attach_visual_context_to_route, put_visual_context
 
 WALKING_SPEED_MPS = 1.2
 
@@ -76,353 +70,22 @@ _detector_cache: dict[str, DeviationDetector] = {}
 # ---------------------------------------------------------------------------
 _completed_dps: dict[str, set[str]] = {}
 
-DEVIATION_DISTANCE_THRESHOLD = 20.0
-
-TURN_LEFT = 12
-TURN_RIGHT = 13
-
-VIRTUAL_LANDMARKS: list[tuple[str, str, str]] = [
-    ("국민은행", "BK9", "LEFT"),
-    ("스타벅스", "CE7", "RIGHT"),
-    ("GS25", "CS2", "LEFT"),
-]
-
-
-class MockDeviationRequest(BaseModel):
-    route_id: str
-    current_location: Location
-    route_line_string: list[Location]
-    current_dp_id: str
-    current_dp_location: Location
-    completed_dps: list[str] = []
+class PanoramaResultsUploadRequest(BaseModel):
+    dp_id: str
+    direction: str
+    image_base64: Optional[str] = None
+    selected_landmark: Optional[dict] = None
+    candidate_name: Optional[str] = None
+    candidate_type: Optional[str] = None
+    analysis_purpose: Optional[str] = None
+    analysis_result: Optional[VisionAnalysisData] = None
 
 
 app = FastAPI(
-    title="MOON dp-pipeline verification server",
+    title="MOON dp-pipeline server",
     version="0.1.0",
-    description=(
-        "Local verification endpoints for Postman. "
-        "Mock endpoints stay local, and /api/smoke/tmap performs a live Tmap call."
-    ),
+    description="Live route, guidance, tracking, and Vision endpoints.",
 )
-
-
-def _location_tuple(location: Location) -> tuple[float, float]:
-    return location.latitude, location.longitude
-
-
-def _location_from_tuple(coords: tuple[float, float]) -> Location:
-    return Location(latitude=coords[0], longitude=coords[1])
-
-
-def _meters_to_latitude(delta_m: float) -> float:
-    return delta_m / 111_111.0
-
-
-def _meters_to_longitude(delta_m: float, latitude: float) -> float:
-    cos_lat = math.cos(math.radians(latitude))
-    if abs(cos_lat) < 1e-9:
-        return 0.0
-    return delta_m / (111_111.0 * cos_lat)
-
-
-def _offset_point(lat: float, lon: float, bearing_deg: float, distance_m: float) -> tuple[float, float]:
-    radians = math.radians(bearing_deg)
-    north_m = math.cos(radians) * distance_m
-    east_m = math.sin(radians) * distance_m
-    return (
-        lat + _meters_to_latitude(north_m),
-        lon + _meters_to_longitude(east_m, lat),
-    )
-
-
-def _route_distance(coords: list[tuple[float, float]]) -> float:
-    total = 0.0
-    for index in range(len(coords) - 1):
-        start = coords[index]
-        end = coords[index + 1]
-        total += haversine(start[0], start[1], end[0], end[1])
-    return total
-
-
-def _build_route_coords(origin: Location, destination: Location) -> list[tuple[float, float]]:
-    start = _location_tuple(origin)
-    end = _location_tuple(destination)
-    direct_distance = haversine(start[0], start[1], end[0], end[1])
-
-    if direct_distance < 120:
-        return [start, end]
-
-    mid_lat = (start[0] + end[0]) / 2
-    mid_lon = (start[1] + end[1]) / 2
-    bearing = calculate_bearing(start[0], start[1], end[0], end[1])
-    bend_side = 90.0 if destination.longitude >= origin.longitude else -90.0
-    bend_offset_m = min(40.0, max(20.0, direct_distance * 0.08))
-    bend = _offset_point(mid_lat, mid_lon, (bearing + bend_side) % 360, bend_offset_m)
-    return [start, bend, end]
-
-
-def _turn_type_for_bend(coords: list[tuple[float, float]]) -> int | None:
-    if len(coords) < 3:
-        return None
-
-    first = calculate_bearing(coords[0][0], coords[0][1], coords[1][0], coords[1][1])
-    second = calculate_bearing(coords[1][0], coords[1][1], coords[2][0], coords[2][1])
-    delta = ((second - first + 540) % 360) - 180
-
-    if delta <= -20:
-        return TURN_LEFT
-    if delta >= 20:
-        return TURN_RIGHT
-    return None
-
-
-def _make_panorama_request(location: Location, primary_label: str = "FRONT") -> PanoramaRequest:
-    directions = [
-        PanoramaDirection(pan=0.0, label="FRONT", is_primary=primary_label == "FRONT"),
-        PanoramaDirection(pan=-90.0, label="LEFT", is_primary=primary_label == "LEFT"),
-        PanoramaDirection(pan=90.0, label="RIGHT", is_primary=primary_label == "RIGHT"),
-    ]
-    return PanoramaRequest(location=location, directions=directions)
-
-
-def _make_virtual_landmark(index: int) -> SelectedLandmark:
-    name, category_code, position = VIRTUAL_LANDMARKS[index % len(VIRTUAL_LANDMARKS)]
-    return SelectedLandmark(
-        name=name,
-        category_code=category_code,
-        position=position,
-        distance=18.0 + index * 4,
-        score=1.3 - (index * 0.05),
-        match_status="POI_ONLY",
-        is_open=True,
-    )
-
-
-def _make_turn_landmark(turn_type: int) -> SelectedLandmark:
-    is_right_turn = turn_type == TURN_RIGHT
-    return SelectedLandmark(
-        name="올리브영" if is_right_turn else "GS25",
-        category_code="CS2" if not is_right_turn else "CE7",
-        position="RIGHT" if is_right_turn else "LEFT",
-        distance=14.0,
-        score=1.72,
-        match_status="POI_ONLY",
-        is_open=True,
-    )
-
-
-def _direction_text(turn_type: int) -> str:
-    return "right" if turn_type == TURN_RIGHT else "left"
-
-
-def _action_text(turn_type: int) -> str:
-    return "RIGHT_TURN" if turn_type == TURN_RIGHT else "LEFT_TURN"
-
-
-def _mock_route_id(request: RouteRequest) -> str:
-    key = (
-        f"{request.origin_lat:.6f}:{request.origin_lng:.6f}:"
-        f"{request.dest_lat:.6f}:{request.dest_lng:.6f}:{request.dest_name}"
-    )
-    digest = hashlib.sha1(key.encode("utf-8")).hexdigest()[:10]
-    return f"mock-route-{digest}"
-
-
-def _build_mock_route_response(request: RouteRequest) -> RouteResponse:
-    origin = Location(latitude=request.origin_lat, longitude=request.origin_lng)
-    destination = Location(latitude=request.dest_lat, longitude=request.dest_lng)
-    route_coords = _build_route_coords(origin, destination)
-    total_distance = _route_distance(route_coords)
-    route_id = _mock_route_id(request)
-    destination_name = request.dest_name or "destination"
-
-    decision_points: list[DecisionPoint] = [
-        DecisionPoint(
-            dp_id="dp-start",
-            dp_type="DEPARTURE",
-            turn_type=200,
-            location=origin,
-            distance_from_start=0.0,
-            guidance=Guidance(
-                primary=f"Start walking toward {destination_name}.",
-                pre_alert=None,
-                action=None,
-            ),
-            selected_landmark=None,
-            panorama_request=_make_panorama_request(origin, primary_label="FRONT"),
-        )
-    ]
-
-    turn_type = _turn_type_for_bend(route_coords)
-    if turn_type is not None:
-        bend_location = _location_from_tuple(route_coords[1])
-        landmark = _make_turn_landmark(turn_type)
-        direction = _direction_text(turn_type)
-        decision_points.append(
-            DecisionPoint(
-                dp_id="dp-turn-1",
-                dp_type="DIRECTION_CHANGE",
-                turn_type=turn_type,
-                location=bend_location,
-                distance_from_start=haversine(
-                    route_coords[0][0],
-                    route_coords[0][1],
-                    route_coords[1][0],
-                    route_coords[1][1],
-                ),
-                guidance=Guidance(
-                    primary=f"Turn {direction} at {landmark.name}.",
-                    pre_alert=f"Soon you will see {landmark.name}. Get ready to turn {direction}.",
-                    action=_action_text(turn_type),
-                ),
-                selected_landmark=landmark,
-                panorama_request=_make_panorama_request(
-                    bend_location,
-                    primary_label=landmark.position,
-                ),
-            )
-        )
-
-    if total_distance > VIRTUAL_DP_THRESHOLD:
-        spaced_points = interpolate_linestring_with_distance(route_coords, VIRTUAL_DP_THRESHOLD)
-        for index, (distance_from_start, coords) in enumerate(spaced_points, start=1):
-            if total_distance - distance_from_start < ARRIVAL_DISTANCE * 2:
-                continue
-            landmark = _make_virtual_landmark(index - 1)
-            location = _location_from_tuple(coords)
-            direction = landmark.position.lower()
-            decision_points.append(
-                DecisionPoint(
-                    dp_id=f"dp-virtual-{index}",
-                    dp_type="VIRTUAL",
-                    turn_type=None,
-                    location=location,
-                    distance_from_start=distance_from_start,
-                    guidance=Guidance(
-                        primary=f"If {landmark.name} is on your {direction}, keep going straight.",
-                        pre_alert=None,
-                        action=None,
-                    ),
-                    selected_landmark=landmark,
-                    panorama_request=PanoramaRequest(
-                        location=location,
-                        directions=[
-                            PanoramaDirection(
-                                pan=0.0,
-                                label="FRONT",
-                                is_primary=True,
-                            )
-                        ],
-                    ),
-                )
-            )
-
-    decision_points.append(
-        DecisionPoint(
-            dp_id="dp-arrival",
-            dp_type="ARRIVAL",
-            turn_type=201,
-            location=destination,
-            distance_from_start=total_distance,
-            guidance=Guidance(
-                primary=f"You have arrived at {destination_name}.",
-                pre_alert=f"{destination_name} is just ahead.",
-                action=None,
-            ),
-            selected_landmark=None,
-            panorama_request=_make_panorama_request(destination, primary_label="FRONT"),
-        )
-    )
-
-    decision_points.sort(key=lambda decision_point: decision_point.distance_from_start)
-
-    return RouteResponse(
-        route_id=route_id,
-        origin=origin,
-        destination=destination,
-        dest_name=request.dest_name,
-        total_distance=total_distance,
-        total_time=total_distance / WALKING_SPEED_MPS,
-        decision_points=decision_points,
-        route_line_string=[_location_from_tuple(coords) for coords in route_coords],
-        is_rerouted=False,
-        previous_route_id=None,
-    )
-
-
-def _classify_trigger(distance_to_dp_m: float) -> str | None:
-    if distance_to_dp_m <= ARRIVAL_DISTANCE:
-        return "ARRIVAL"
-    if distance_to_dp_m <= PRE_ALERT_DISTANCE:
-        return "PRE_ALERT"
-    return None
-
-
-def _build_mock_deviation_response(request: MockDeviationRequest) -> DeviationResponse:
-    route_coords = [_location_tuple(location) for location in request.route_line_string]
-    current = _location_tuple(request.current_location)
-    current_dp = _location_tuple(request.current_dp_location)
-    destination = route_coords[-1]
-
-    distance_to_route = point_to_linestring_distance(current[0], current[1], route_coords)
-    distance_to_dp = haversine(current[0], current[1], current_dp[0], current_dp[1])
-    distance_to_destination = haversine(current[0], current[1], destination[0], destination[1])
-
-    trigger = _classify_trigger(distance_to_dp)
-    if distance_to_destination <= ARRIVAL_DISTANCE:
-        navigation_state = "ARRIVED"
-        trigger = "ARRIVAL"
-        guidance = Guidance(
-            primary="You have reached the destination.",
-            pre_alert=None,
-            action=None,
-        )
-    elif distance_to_route > DEVIATION_DISTANCE_THRESHOLD:
-        navigation_state = "DEVIATION_SUSPECTED"
-        guidance = Guidance(
-            primary="You seem to be leaving the planned route.",
-            pre_alert=None,
-            action=None,
-        )
-    else:
-        navigation_state = "ON_ROUTE"
-        if trigger == "ARRIVAL":
-            guidance = Guidance(
-                primary=f"Arrived at {request.current_dp_id}.",
-                pre_alert=None,
-                action=None,
-            )
-        elif trigger == "PRE_ALERT":
-            guidance = Guidance(
-                primary=f"{request.current_dp_id} is ahead.",
-                pre_alert=f"Decision point {request.current_dp_id} is within {PRE_ALERT_DISTANCE:.0f} meters.",
-                action=None,
-            )
-        else:
-            guidance = Guidance(
-                primary="Continue along the current route.",
-                pre_alert=None,
-                action=None,
-            )
-
-    remaining_distance = max(distance_to_destination, 0.0)
-    progress = Progress(
-        completed_dps=request.completed_dps,
-        current_dp_id=request.current_dp_id,
-        remaining_dps=[request.current_dp_id],
-        distance_remaining=remaining_distance,
-        time_remaining=remaining_distance / WALKING_SPEED_MPS,
-    )
-
-    return DeviationResponse(
-        navigation_state=navigation_state,
-        current_dp_id=request.current_dp_id,
-        distance_to_dp=distance_to_dp,
-        trigger=trigger,
-        guidance=guidance,
-        progress=progress,
-    )
 
 
 def _build_live_tmap_request_summary(request: RouteRequest) -> dict:
@@ -608,11 +271,10 @@ def root() -> ApiResponse:
                 "/api/smoke/tmap",
                 "/api/smoke/midpoint-poi",
                 "/api/route/{route_id}",
-                "/api/route/mock",
                 "/api/deviation",
                 "/api/reroute",
                 "/api/chat",
-                "/api/deviation/mock",
+                "/api/vision/analyze",
             ],
         }
     )
@@ -623,6 +285,84 @@ def health() -> ApiResponse:
     return ApiResponse(data={"status": "ok"})
 
 
+@app.post("/api/vision/analyze", response_model=ApiResponse)
+async def vision_analyze(request: VisionAnalyzeRequest) -> ApiResponse:
+    result = await analyze_panorama(request)
+    if result.analysis_status == VisionAnalysisStatus.VISION_DISABLED:
+        raise HTTPException(status_code=503, detail="Vision analysis is disabled")
+    return ApiResponse(data=result)
+
+
+@app.post("/api/route/{route_id}/panorama-results", response_model=ApiResponse)
+async def panorama_results_upload(route_id: str, request: PanoramaResultsUploadRequest) -> ApiResponse:
+    selected_landmark = request.selected_landmark or {}
+    candidate_name = request.candidate_name or selected_landmark.get("name")
+    candidate_type = request.candidate_type or selected_landmark.get("category_code")
+    route = _route_cache.get(route_id)
+    dp_location = None
+    if route is not None:
+        for dp in route.decision_points:
+            if dp.dp_id == request.dp_id:
+                dp_location = dp.location
+                break
+
+    if request.analysis_result is not None:
+        result = request.analysis_result
+    else:
+        analyze_request = VisionAnalyzeRequest(
+            route_id=route_id,
+            dp_id=request.dp_id,
+            direction=request.direction,
+            image_base64=request.image_base64,
+            selected_landmark=request.selected_landmark,
+            analysis_purpose=request.analysis_purpose or "SURROUNDING",
+        )
+        result = await analyze_panorama(analyze_request)
+        if result.analysis_status == VisionAnalysisStatus.VISION_DISABLED:
+            raise HTTPException(status_code=503, detail="Vision analysis is disabled")
+
+    persisted = put_visual_context(
+        route_id,
+        request.dp_id,
+        request.direction,
+        result,
+        candidate_name=candidate_name,
+        candidate_type=candidate_type,
+        source="panorama-results",
+        location=dp_location,
+    )
+
+    route_updated = False
+    route_recalculated = False
+    if route is not None:
+        if settings.kakao_api_key:
+            snapshot = route.model_copy(deep=True)
+            try:
+                await run_pipeline_steps_3_to_5(
+                    decision_points=route.decision_points,
+                    route_coordinates=[
+                        (loc.latitude, loc.longitude)
+                        for loc in route.route_line_string
+                    ],
+                    dest_name=route.dest_name,
+                    route_id=route.route_id,
+                )
+                route_updated = True
+                route_recalculated = True
+            except Exception:
+                _route_cache[route_id] = snapshot
+                route = snapshot
+                route_updated = attach_visual_context_to_route(route, request.dp_id)
+        else:
+            route_updated = attach_visual_context_to_route(route, request.dp_id)
+
+    return ApiResponse(data={
+        **persisted.model_dump(mode="json"),
+        "route_cache_updated": route_updated,
+        "route_recalculated": route_recalculated,
+    })
+
+
 @app.post("/api/smoke/tmap", response_model=ApiResponse)
 async def tmap_smoke(request: RouteRequest) -> ApiResponse:
     return ApiResponse(
@@ -631,17 +371,6 @@ async def tmap_smoke(request: RouteRequest) -> ApiResponse:
             scenario="tmap_live_dp_pipeline",
         )
     )
-
-
-@app.post("/api/route/mock", response_model=ApiResponse)
-async def route_mock(request: RouteRequest) -> ApiResponse:
-    route_response = _build_mock_route_response(request)
-    return ApiResponse(data=route_response)
-
-
-@app.post("/api/deviation/mock", response_model=ApiResponse)
-def deviation_mock(request: MockDeviationRequest) -> ApiResponse:
-    return ApiResponse(data=_build_mock_deviation_response(request))
 
 
 @app.post("/api/smoke/midpoint-poi", response_model=ApiResponse)
@@ -661,6 +390,7 @@ async def midpoint_poi_smoke(request: RouteRequest) -> ApiResponse:
 
 async def _build_route_response(request: RouteRequest) -> RouteResponse:
     """Full live pipeline: Tmap → DP extraction → midpoint → POI/scoring → RouteResponse."""
+    route_id = f"route-{uuid.uuid4().hex[:10]}"
     tmap_result = await request_pedestrian_route(
         origin_lat=request.origin_lat,
         origin_lng=request.origin_lng,
@@ -695,6 +425,7 @@ async def _build_route_response(request: RouteRequest) -> RouteResponse:
         decision_points=decision_points,
         route_coordinates=tmap_result.coordinates,
         dest_name=request.dest_name or "",
+        route_id=route_id,
     )
 
     print(f"\n{'='*60}")
@@ -709,7 +440,6 @@ async def _build_route_response(request: RouteRequest) -> RouteResponse:
         print(f"       preAlert={pre}")
     print(f"{'='*60}\n")
 
-    route_id = f"route-{uuid.uuid4().hex[:10]}"
     origin = Location(latitude=request.origin_lat, longitude=request.origin_lng)
     destination = Location(latitude=request.dest_lat, longitude=request.dest_lng)
 
@@ -734,22 +464,6 @@ async def _build_route_response(request: RouteRequest) -> RouteResponse:
 async def route_create(request: RouteRequest) -> ApiResponse:
     """Live pipeline: Tmap → DP → midpoint → POI/scoring → RouteResponse."""
     route_response = await _build_route_response(request)
-
-    # Mock guidance override for demo route
-    from config import MOCK_GUIDANCE
-    if MOCK_GUIDANCE:
-        from mock_guidance import apply_mock_guidance
-        route_response = apply_mock_guidance(
-            route_response,
-            route_response.origin,
-            route_response.destination,
-        )
-        from mock_guidance_final import apply_mock_guidance as apply_mock_guidance_final
-        route_response = apply_mock_guidance_final(
-            route_response,
-            route_response.origin,
-            route_response.destination,
-        )
 
     _route_cache[route_response.route_id] = route_response
     return ApiResponse(data=route_response)
@@ -1033,16 +747,6 @@ async def reroute_endpoint(request: RerouteRequest) -> ApiResponse:
     result = await reroute_service(request, previous_dps=previous_dps)
 
     if result.success and result.route_response is not None:
-        # === [추가] mock_guidance_reroute 후처리 ===
-        from config import MOCK_GUIDANCE
-        if MOCK_GUIDANCE:
-            from mock_guidance_reroute import apply_mock_guidance as apply_mock_guidance_reroute
-            result.route_response = apply_mock_guidance_reroute(
-                result.route_response,
-                result.route_response.origin,
-                result.route_response.destination,
-            )
-
         new_route_id = result.route_response.route_id
         # Cache the new route
         _route_cache[new_route_id] = result.route_response

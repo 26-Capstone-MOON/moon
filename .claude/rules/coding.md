@@ -117,12 +117,12 @@ src/main/java/com/moonapp/
 
 | App Endpoint | Controller | Python Call |
 |---|---|---|
-| `POST /route` | RouteController | `POST localhost:8000/pipeline/route` |
-| `GET /route/{routeId}` | RouteController | `GET localhost:8000/pipeline/route/{routeId}` |
-| `POST /route/{routeId}/panorama-results` | NavigationController | `POST localhost:8000/pipeline/panorama` |
-| `POST /route/{routeId}/reroute` | NavigationController | `POST localhost:8000/pipeline/reroute` |
-| `POST /route/{routeId}/conversation` | NavigationController | `POST localhost:8000/pipeline/conversation` |
-| `WebSocket /tracking` | TrackingWebSocketHandler | `POST localhost:8001/deviation/check` |
+| `POST /route` | RouteController | `POST localhost:8000/api/route` |
+| `GET /route/{routeId}` | RouteController | `GET localhost:8000/api/route/{routeId}` |
+| `POST /route/{routeId}/panorama-results` | NavigationController | `POST localhost:8000/api/route/{routeId}/panorama-results` |
+| `POST /route/{routeId}/reroute` | NavigationController | `POST localhost:8000/api/reroute` |
+| `POST /route/{routeId}/conversation` | NavigationController | `POST localhost:8000/api/chat` |
+| `WebSocket /tracking` | TrackingWebSocketHandler | `POST localhost:8000/api/deviation` |
 
 ### Java / Spring Boot Style
 - Lombok: `@Getter`, `@Builder`, `@RequiredArgsConstructor`
@@ -149,7 +149,7 @@ API keys are managed by Python services, NOT Spring Boot.
 
 ### What NOT to Do (Backend)
 - No business logic in Spring Boot — Python handles all pipeline/scoring/detection
-- No direct external API calls (Tmap, Kakao, Google) — Python does this
+- No direct external API calls (Tmap, Kakao, Google, Overpass) — Python does this
 - No Domain objects exposed to client (DTO conversion required)
 - No fields in response not in API spec
 
@@ -172,10 +172,13 @@ services/
 │   ├── tmap_service.py            # Tmap API call + GeoJSON parsing
 │   ├── dp_extractor.py            # turnType-based DP extraction
 │   ├── poi_service.py             # Kakao Local API + adaptive radius + left/right judgment
+│   ├── osm_service.py             # Overpass API + OSM spatial-element normalization/cache
+│   ├── candidate_service.py       # Kakao/OSM candidate merge + deduplication
 │   ├── panorama_service.py        # Multi-direction pan calculation + isPrimary
-│   ├── scoring_service.py         # S_final = (P × h × U) × D
+│   ├── scoring_service.py         # S_final = (P × h × U) × D, with Vision V when cached
 │   ├── sequence_optimizer.py      # Greedy + direction consistency
 │   ├── guidance_generator.py      # DP type templates + LLM prompt
+│   ├── vision_cache.py            # Vision salience/appearance/surrounding cache
 │   └── route_cache.py             # Cache management
 └── deviation/                     # Off-route detection (port 8001)
     ├── main.py                    # FastAPI app entry
@@ -197,6 +200,7 @@ services/
 | Endpoint | Role |
 |---|---|
 | `POST /api/route` | Route creation + landmark + guidance |
+| `POST /api/route/{routeId}/panorama-results` | Vision result merge + route cache update |
 | `POST /api/deviation` | Off-route detection |
 | `POST /api/reroute` | Re-routing (new pipeline run) |
 | `POST /api/chat` | Conversational guidance (LLM) |

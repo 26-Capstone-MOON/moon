@@ -25,7 +25,6 @@ import {
   prefetchGuidanceAudio,
 } from '../services/ttsService';
 import { vibrateApproach, vibrateArrival, vibrateTurn } from '../services/hapticService';
-import { MOCK_ROUTE_RESPONSE } from '../mocks/mockRoute';
 import { useRouteStore } from '../stores/useRouteStore';
 import { useNavigationStore } from '../stores/useNavigationStore';
 import { useWebSocket } from '../hooks/useWebSocket';
@@ -68,6 +67,7 @@ const SNAP_MAX = 0.90;  // 90%
 // Panorama height range (driven by bottom sheet position)
 const PANO_HEIGHT_MIN = 200;
 const PANO_HEIGHT_MAX = 260;
+const DEFAULT_GUIDANCE = '주변을 확인하며 전방으로 계속 이동하세요.';
 
 // Header icon: routed through the same arrow-type classifier as the lock-screen
 // widget (see widgetService.dpTypeToArrowType) so that LEFT/RIGHT/U turns,
@@ -116,11 +116,11 @@ function getRouteCoordinates(lineString: any): Location[] {
 
 export default function NavigationScreen({ navigation, route }: Props) {
   const { departure, destination, dpList: paramDpList } = route.params;
-  const storeDpList = useRouteStore(s => s.decisionPoints) ?? [];
+  const storeDpList = useRouteStore(s => s.decisionPoints);
   const dpList = useMemo(() => {
     if (storeDpList.length > 0) { return storeDpList; }
     if (paramDpList?.length > 0) { return paramDpList; }
-    return MOCK_ROUTE_RESPONSE.decisionPoints;
+    return [];
   }, [storeDpList, paramDpList]);
 
   const routeData = useRouteStore(s => s.routeData);
@@ -132,7 +132,7 @@ export default function NavigationScreen({ navigation, route }: Props) {
   const isFocused = useIsFocused();
 
   // GPS tracking
-  const { position, startTracking, stopTracking } = useLocation();
+  const { position, error: locationError, startTracking, stopTracking } = useLocation();
 
   const [localIndex, setLocalIndex] = useState(currentDpIndex);
   const [isNavigating, setIsNavigating] = useState(true);
@@ -251,7 +251,7 @@ export default function NavigationScreen({ navigation, route }: Props) {
   const progress = dpList.length > 0 ? ((localIndex + 1) / dpList.length) * 100 : 0;
 
   const lineCoords = getRouteCoordinates(
-    routeData?.routeLineString ?? MOCK_ROUTE_RESPONSE.routeLineString,
+    routeData?.routeLineString,
   );
 
   // Sync local index to store
@@ -376,7 +376,7 @@ export default function NavigationScreen({ navigation, route }: Props) {
     });
     const state: WidgetState = {
       label: (currentDP.guidance as any)?.alertLabel ?? fallbackLabel,
-      primary: currentDP.guidance?.primary ?? '',
+      primary: currentDP.guidance?.primary ?? DEFAULT_GUIDANCE,
       next: nextLandmarkName,
       arrowType,
       progress: progressPct,
@@ -391,7 +391,7 @@ export default function NavigationScreen({ navigation, route }: Props) {
     } else {
       updateWidget(state).catch(err => console.warn('updateWidget failed', err));
     }
-  }, [currentDP, nextDP, localIndex, dpList.length, navigationState, trigger, isAssistantListening]);
+  }, [currentDP, nextDP, localIndex, dpList, dpList.length, navigationState, trigger, isAssistantListening]);
 
   // Stop widget on unmount
   useEffect(() => {
@@ -399,22 +399,6 @@ export default function NavigationScreen({ navigation, route }: Props) {
       stopWidget().catch(err => console.warn('stopWidget failed', err));
     };
   }, []);
-
-  // Mock 모드: 출발지 DP일 때 store에 ARRIVAL trigger 주입 → trigger-based TTS가 처리
-  const hasFiredDeparture = useRef(false);
-  useEffect(() => {
-    if (hasFiredDeparture.current) { return; }
-    if (connectionState === 'CONNECTED') { return; }
-    if (!currentDP || currentDP.dpType !== 'DEPARTURE' || localIndex !== 0) { return; }
-    hasFiredDeparture.current = true;
-    useNavigationStore.getState().setTrigger('ARRIVAL');
-    useNavigationStore.getState().setGuidance({
-      primary: currentDP.guidance?.primary ?? '',
-      preAlert: currentDP.guidance?.preAlert ?? null,
-      action: currentDP.guidance?.action ?? null,
-      primaryAudio: currentDP.guidance?.primaryAudio ?? null,
-    });
-  }, [currentDP, connectionState, localIndex]);
 
   // TTS on trigger change (deduplicated by trigger + dpId)
   const lastSpokenKey = useRef<string | null>(null);
@@ -496,18 +480,6 @@ export default function NavigationScreen({ navigation, route }: Props) {
     }
   }, [currentDpId, trigger, dpList, connectionState, localIndex]);
 
-  // Auto-progress mock — only when WebSocket is NOT connected
-  useEffect(() => {
-    if (!isNavigating || isLastDP || !isFocused) { return; }
-    if (connectionState === 'CONNECTED') { return; }
-    timerRef.current = setTimeout(() => {
-      setLocalIndex(prev => Math.min(prev + 1, dpList.length - 1));
-    }, 15000);
-    return () => {
-      if (timerRef.current) { clearTimeout(timerRef.current); }
-    };
-  }, [localIndex, isNavigating, isLastDP, isFocused, dpList.length, connectionState]);
-
   // handleReroute removed — reroute is handled by WebSocket server automatically
 
   // Send GPS to server via WebSocket when position updates
@@ -539,6 +511,12 @@ export default function NavigationScreen({ navigation, route }: Props) {
     startTracking();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (locationError) {
+      showError(locationError);
+    }
+  }, [locationError, showError]);
 
   // 잠금화면 위젯 "질문하기" 탭 → BroadcastReceiver → DeviceEventEmitter.
   // 시트 자동 오픈 + 카운터 증가로 STT 자동 시작 트리거.
@@ -594,14 +572,6 @@ export default function NavigationScreen({ navigation, route }: Props) {
     navigation.popToTop();
   }, [navigation, stopTracking, disconnect]);
 
-  const handlePrev = () => {
-    if (localIndex > 0) { setLocalIndex(prev => prev - 1); }
-  };
-
-  const handleNext = () => {
-    if (!isLastDP) { setLocalIndex(prev => prev + 1); }
-  };
-
   const navigateToProgressRef = useRef(() => {
     navigation.navigate('Progress', { departure, destination, dpList });
   });
@@ -648,26 +618,14 @@ export default function NavigationScreen({ navigation, route }: Props) {
     navigation.navigate('Progress', { departure, destination, dpList });
   }, [navigation, departure, destination, dpList]);
 
-  if (!currentDP) {
-    return (
-      <SafeAreaView style={styles.safe}>
-        <View style={styles.loadingContainer}>
-          <Text style={{ color: COLORS.subtext }}>경로 정보를 불러오는 중...</Text>
-        </View>
-      </SafeAreaView>
-    );
-  }
-
+  const routeUnavailable = !currentDP || !routeData;
   // Initial camera: lock to actual route origin (the user's real starting GPS),
   // not dpList[0].location which is the DP marker (~10m offset from origin).
-  // Priority: routeData.origin (server-provided) → dpList[0].location → demo fallback.
+  // Priority: routeData.origin (server-provided), then the first server DP.
   // Use wider zoom (15) at first paint — zoom 17 felt cramped on entry.
   // Once GPS arrives AND is within range, the live `camera` prop zooms in to 17.
   const cameraOrigin = useMemo(() => {
-    // Demo route origin (matches DEMO_ROUTE_ORIGIN in mock_guidance_final.py).
-    // Used only when neither server origin nor dpList[0] is available.
-    const DEMO_ORIGIN = { latitude: 37.504879, longitude: 127.025111 };
-    const o = routeData?.origin ?? dpList[0]?.location ?? DEMO_ORIGIN;
+    const o = routeData?.origin ?? dpList[0]?.location ?? { latitude: 0, longitude: 0 };
     return { latitude: o.latitude, longitude: o.longitude };
   }, [routeData, dpList]);
   const initialCamera = useMemo(
@@ -703,6 +661,22 @@ export default function NavigationScreen({ navigation, route }: Props) {
   const cameraProps = isFollowing && position && positionNearOrigin ? {
     camera: { latitude: position.latitude, longitude: position.longitude, zoom: 17 },
   } : {};
+
+  if (routeUnavailable) {
+    return (
+      <SafeAreaView style={styles.safe}>
+        <View style={styles.loadingContainer}>
+          <Icon name="warning-outline" size={28} color={COLORS.subtext} />
+          <Text style={styles.errorStateText}>
+            경로를 불러오지 못했습니다. 네트워크 연결 또는 서버 상태를 확인한 뒤 다시 시도하세요.
+          </Text>
+          <TouchableOpacity style={styles.retryButton} onPress={() => navigation.goBack()}>
+            <Text style={styles.retryButtonText}>다시 시도</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <GestureHandlerRootView style={styles.root}>
@@ -748,10 +722,12 @@ export default function NavigationScreen({ navigation, route }: Props) {
               {dpList.map((dp, i) => (
                 <DpMarker key={dp.dpId} dp={dp} index={i} isActive={i === localIndex} />
               ))}
-              <CurrentLocationMarker
-                latitude={position?.latitude ?? currentDP.location.latitude}
-                longitude={position?.longitude ?? currentDP.location.longitude}
-              />
+              {position && (
+                <CurrentLocationMarker
+                  latitude={position.latitude}
+                  longitude={position.longitude}
+                />
+              )}
             </MapView>
 
             {/* Vertical progress rail (visual only, pointerEvents disabled) */}
@@ -764,22 +740,6 @@ export default function NavigationScreen({ navigation, route }: Props) {
               </TouchableOpacity>
             )}
 
-            {/* Mock DP controls overlay */}
-            <View style={styles.mockOverlay}>
-              <TouchableOpacity
-                style={[styles.mockBtn, localIndex === 0 && styles.mockBtnDisabled]}
-                onPress={handlePrev}
-                disabled={localIndex === 0}>
-                <Icon name="chevron-back" size={16} color={localIndex === 0 ? '#CCC' : COLORS.primary} />
-              </TouchableOpacity>
-              <Text style={styles.dpCounter}>{localIndex + 1}/{dpList.length}</Text>
-              <TouchableOpacity
-                style={[styles.mockBtn, isLastDP && styles.mockBtnDisabled]}
-                onPress={handleNext}
-                disabled={isLastDP}>
-                <Icon name="chevron-forward" size={16} color={isLastDP ? '#CCC' : COLORS.primary} />
-              </TouchableOpacity>
-            </View>
           </View>
 
           {/* Bottom Sheet */}
@@ -860,13 +820,13 @@ export default function NavigationScreen({ navigation, route }: Props) {
                   </View>
                 )}
 
-                <Text style={styles.guideText}>{currentDP.guidance?.primary}</Text>
+                <Text style={styles.guideText}>{currentDP.guidance?.primary ?? DEFAULT_GUIDANCE}</Text>
 
                 {nextDP && (
                   <View style={styles.nextHintRow}>
                     <Icon name="arrow-forward-circle-outline" size={14} color={COLORS.subtext} />
                     <Text style={styles.nextHintText} numberOfLines={1}>
-                      다음: {nextDP.guidance?.primary}
+                      다음: {nextDP.guidance?.primary ?? DEFAULT_GUIDANCE}
                     </Text>
                   </View>
                 )}
@@ -984,6 +944,25 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    paddingHorizontal: 32,
+    gap: 12,
+  },
+  errorStateText: {
+    color: COLORS.subtext,
+    fontSize: 15,
+    lineHeight: 22,
+    textAlign: 'center',
+  },
+  retryButton: {
+    backgroundColor: COLORS.primary,
+    borderRadius: 10,
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+  },
+  retryButtonText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '700',
   },
 
   // Top Bar
@@ -1071,42 +1050,6 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.2,
     shadowRadius: 3,
   },
-  mockOverlay: {
-    position: 'absolute',
-    bottom: 12,
-    alignSelf: 'center',
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.95)',
-    borderRadius: 20,
-    paddingHorizontal: 6,
-    paddingVertical: 4,
-    elevation: 3,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.12,
-    shadowRadius: 4,
-    gap: 6,
-  },
-  mockBtn: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#F5F5F5',
-  },
-  mockBtnDisabled: {
-    backgroundColor: '#FAFAFA',
-  },
-  dpCounter: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: COLORS.text,
-    minWidth: 36,
-    textAlign: 'center',
-  },
-
   // Bottom Sheet
   sheetBackground: {
     backgroundColor: COLORS.background,

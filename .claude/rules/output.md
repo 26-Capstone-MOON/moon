@@ -9,12 +9,11 @@
 
 ## Frontend Output Rules
 
-### Mock Data
-- Always provide mock data when building new features
-- Mock data must match API spec v0.1.0 response types exactly
-- Mock data should be realistic (Korean addresses, real brand names)
-- Place mock data in `frontend/src/mocks/`
-- Mock structure must match RouteResponse and TrackingResponse — see CLAUDE.md §8
+### Route Data
+- Use real server responses that match API spec v0.1.0 response types exactly
+- Route data should preserve Korean addresses, real POI names, and server-provided DP ordering
+- Keep route fixtures in test-only locations when tests need static input
+- RouteResponse and TrackingResponse structure must match CLAUDE.md §8
 
 ### Fallback
 - Every guidance display must handle: text missing, landmark missing, DP missing
@@ -53,7 +52,7 @@ For code patterns (Controller, Service, Client, WebSocket handler), see `coding.
 
 ### API Spec is the Source of Truth
 - Field names, types, enum values must match API spec v0.1.0
-- Frontend mock data and backend responses must share identical structure
+- Frontend types and backend responses must share identical structure
 - Do not add fields not in the spec
 - Python returns snake_case → Spring Boot converts to camelCase for app
 

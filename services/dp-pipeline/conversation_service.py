@@ -19,6 +19,7 @@ from schemas import (
     DecisionPoint,
     RouteResponse,
 )
+from vision_cache import visual_description
 
 logger = logging.getLogger(__name__)
 
@@ -80,8 +81,14 @@ def _find_appearance(
                 start_idx = i
                 break
     for dp in dps[start_idx:]:
-        if dp.selected_landmark and dp.selected_landmark.appearance:
-            return dp.selected_landmark.appearance
+        if not dp.selected_landmark:
+            continue
+        desc = (
+            visual_description(dp.selected_landmark.visual_context)
+            or dp.selected_landmark.appearance
+        )
+        if desc:
+            return desc
     return None
 
 
@@ -190,6 +197,14 @@ def _render_dp_block(dp: DecisionPoint) -> str:
         lines.append(f"- 랜드마크: {lm_line}")
     if dp.selected_landmark and dp.selected_landmark.appearance:
         lines.append(f"- 외관: {dp.selected_landmark.appearance}")
+    if dp.selected_landmark and dp.selected_landmark.visual_context:
+        context = dp.selected_landmark.visual_context
+        desc = visual_description(context)
+        if desc:
+            lines.append(f"- visual context: {desc}")
+        if context.visual_cues:
+            cues = ", ".join(cue.description for cue in context.visual_cues)
+            lines.append(f"- visual cues: {cues}")
     return "\n".join(lines)
 
 
@@ -277,6 +292,10 @@ def _build_route_context(
             next_lines.append(f"- {_render_dp_summary(dp)}")
             if dp.selected_landmark and dp.selected_landmark.appearance:
                 next_lines.append(f"  외관: {dp.selected_landmark.appearance}")
+            if dp.selected_landmark and dp.selected_landmark.visual_context:
+                desc = visual_description(dp.selected_landmark.visual_context)
+                if desc:
+                    next_lines.append(f"  visual context: {desc}")
         sections.append("\n".join(next_lines))
 
     return "\n\n".join(sections)
@@ -341,8 +360,8 @@ async def chat(
     """
     show_panorama = _should_show_panorama(request.question)
 
-    # 외관 질문은 LLM을 거치지 않고 mock의 appearance 문자열을 그대로 반환한다.
-    # LLM이 paraphrasing해서 mock 원문이 변형되는 것을 방지.
+    # 외관 질문은 Vision 분석을 수행하지 않는다. route context에 이미 제공된
+    # appearance가 있을 때만 그대로 반환하며, production pipeline은 이 값을 생성하지 않는다.
     if show_panorama:
         appearance = _find_appearance(route, request.current_dp_id)
         if appearance:
@@ -352,8 +371,7 @@ async def chat(
                 target_dp_id=request.current_dp_id,
             )
 
-    # 위치확인 질문도 LLM을 거치지 않고 mock의 position_confirm 문자열을 그대로 반환한다.
-    # 외관과 동일한 패턴 — 시연 안정성을 위해 정형 답변 보장.
+    # 위치확인 질문도 route context에 이미 제공된 정형 문구가 있을 때만 그대로 반환한다.
     if _should_confirm_position(request.question):
         confirm = _find_position_confirm(route, request.current_dp_id)
         if confirm:

@@ -1,6 +1,5 @@
 import React from 'react';
 import { NaverMapPathOverlay } from '@mj-studio/react-native-naver-map';
-import { COLORS } from '../../constants/colors';
 import type { Location } from '../../types/route';
 
 interface Props {

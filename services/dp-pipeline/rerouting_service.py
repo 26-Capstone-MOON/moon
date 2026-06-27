@@ -46,6 +46,7 @@ async def reroute(
     Returns:
         RerouteResponse with new route data or error info.
     """
+    route_id = f"route-{uuid.uuid4().hex[:10]}"
     # [1] Tmap API re-request
     try:
         tmap_result = await _call_tmap(
@@ -99,6 +100,7 @@ async def reroute(
             route_coordinates=tmap_result.coordinates,
             dest_name=request.dest_name,
             skip_dp_ids=reused_dp_ids,
+            route_id=route_id,
         )
     except Exception as exc:
         logger.error("Pipeline STEP 3~5 failed during reroute: %s", exc)
@@ -108,7 +110,6 @@ async def reroute(
         )
 
     # [5] Build RouteResponse
-    route_id = f"route-{uuid.uuid4().hex[:10]}"
     origin = Location(
         latitude=request.current_lat,
         longitude=request.current_lng,
@@ -142,7 +143,7 @@ async def reroute(
 
 
 # ---------------------------------------------------------------------------
-# Pipeline step wrappers (isolate external dependencies for test mocking)
+# Pipeline step wrappers (isolate external dependencies)
 # ---------------------------------------------------------------------------
 
 async def _call_tmap(

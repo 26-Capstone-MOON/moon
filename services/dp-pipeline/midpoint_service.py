@@ -15,6 +15,7 @@ from constants import (
     VIRTUAL_DP_MIN_SPACING,
     VIRTUAL_DP_THRESHOLD,
 )
+from candidate_service import search_candidates_for_dp
 from geo import (
     calculate_bearing,
     haversine,
@@ -22,7 +23,7 @@ from geo import (
     point_to_segment_distance,
 )
 from places_service import fetch_is_open_statuses, poi_identity_key
-from poi_service import PoiResult, search_pois_for_dp
+from poi_service import PoiResult
 from schemas import (
     DecisionPoint,
     Guidance,
@@ -396,7 +397,7 @@ async def insert_midpoints(
         ) -> _ScoredCandidate:
             async with semaphore:
                 bearing = _bearing_at_point(lat, lon, route_coordinates)
-                pois = await search_pois_for_dp(lat, lon, bearing)
+                pois = await search_candidates_for_dp(lat, lon, bearing)
 
             return _ScoredCandidate(
                 dist_from_start=dist,

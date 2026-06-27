@@ -6,29 +6,29 @@
 
 Always follow this sequence:
 1. Types first (define interfaces — API spec v0.1.0)
-2. Mock data (matching types)
-3. Basic screen (renders mock data)
+2. API contract data (matching types)
+3. Basic screen (renders server-shaped data)
 4. Core logic (hooks, services)
 5. Connect logic to screen
 6. Enhancement (TTS, haptic, polish)
-7. Replace mock → real API integration (REST + WebSocket)
+7. Real API integration (REST + WebSocket)
 8. Naver Map SDK + GPS location tracking
 9. End-to-end test with real route data
 
-Step 1~6: complete frontend flow with mock data
+Step 1~6: complete frontend flow against the API contract
 Step 7~9: real API integration when server is ready
 
-Never skip steps. Mock first → flow works → then connect real API.
+Never skip steps. API contract first → flow works → then end-to-end verification.
 
 ### Frontend Phases
 
 **Phase F1: Core infra + map**
-- Refactor mock data to API spec structure + redefine types
+- Align route data to API spec structure + redefine types
 - Naver Map integration + Polyline + DP markers
 - GPS watchPosition + current location marker
 - TTS trigger (30m → preAlert, 10m → primary) + haptic
 - Zustand (useRouteStore, useNavigationStore)
-- API client + mock mode flag (USE_MOCK)
+- API client + server response mapping
 - **Done when: NavigationScreen shows map + route line + GPS + TTS working**
 
 **Phase F2: Server integration + WebSocket + deviation**
@@ -42,7 +42,7 @@ Never skip steps. Mock first → flow works → then connect real API.
 **Phase F3: Polish + demo prep**
 - Loading/error handling, WebSocket reconnection, UI consistency
 - Demo route rehearsal (real device)
-- Demo fallback (mock mode switch if server down)
+- Server error states are surfaced clearly during rehearsal
 - **Done when: demo-ready state**
 
 ### Frontend Priority
@@ -67,8 +67,8 @@ Never skip steps. Mock first → flow works → then connect real API.
 **Phase B2: Route REST APIs**
 - RouteController + RouteService → PipelineClient
 - POST /route, GET /route/{routeId}
-- Mock Python response if Hyewon's service not ready
-- **Done when: `POST /route` returns response (real or mock Python)**
+- Python service response relay
+- **Done when: `POST /route` returns a live pipeline response**
 
 **Phase B3: Remaining REST APIs**
 - NavigationController → panorama-results, reroute, conversation
@@ -78,7 +78,7 @@ Never skip steps. Mock first → flow works → then connect real API.
 
 **Phase B4: WebSocket GPS tracking**
 - WebSocketConfig + TrackingWebSocketHandler
-- DeviationClient → POST localhost:8001/deviation/check
+- DeviationClient → POST localhost:8000/api/deviation
 - Receive GPS JSON → call Python → send response via WebSocket
 - **Done when: WebSocket /tracking sends and receives JSON correctly**
 
@@ -91,12 +91,12 @@ Never skip steps. Mock first → flow works → then connect real API.
 
 | App Endpoint | Python Service | Python URL |
 |---|---|---|
-| `POST /route` | dp-pipeline | `POST :8000/pipeline/route` |
-| `GET /route/{routeId}` | dp-pipeline | `GET :8000/pipeline/route/{routeId}` |
-| `POST /route/{routeId}/panorama-results` | dp-pipeline | `POST :8000/pipeline/panorama` |
-| `POST /route/{routeId}/reroute` | dp-pipeline | `POST :8000/pipeline/reroute` |
-| `POST /route/{routeId}/conversation` | dp-pipeline | `POST :8000/pipeline/conversation` |
-| `WebSocket /tracking` | deviation | `POST :8001/deviation/check` |
+| `POST /route` | dp-pipeline | `POST :8000/api/route` |
+| `GET /route/{routeId}` | dp-pipeline | `GET :8000/api/route/{routeId}` |
+| `POST /route/{routeId}/panorama-results` | dp-pipeline | `POST :8000/api/route/{routeId}/panorama-results` |
+| `POST /route/{routeId}/reroute` | dp-pipeline | `POST :8000/api/reroute` |
+| `POST /route/{routeId}/conversation` | dp-pipeline | `POST :8000/api/chat` |
+| `WebSocket /tracking` | deviation | `POST :8000/api/deviation` |
 
 ---
 
@@ -110,6 +110,7 @@ Never skip steps. Mock first → flow works → then connect real API.
 | Endpoint | Role | Input | Output |
 |---|---|---|---|
 | `POST /api/route` | Route + landmark + guidance | origin/dest coords | DP list + landmarks + guidance + panorama |
+| `POST /api/route/{routeId}/panorama-results` | Vision result merge | DP/direction/result | route cache update and recalculation status |
 | `POST /api/deviation` | Off-route detection | GPS + route data | normal/warning/confirmed/returning |
 | `POST /api/reroute` | Re-routing | GPS + destination | new DP list + guidance |
 | `POST /api/chat` | Conversational guidance | question + context | LLM response text |
@@ -117,8 +118,8 @@ Never skip steps. Mock first → flow works → then connect real API.
 ### Python Development Phases
 
 **Day 1~2:** Foundation + DP extraction + Midpoint + POI + panorama
-**Day 3:** Scoring + sequence optimization
-**Day 4~5:** Vision prompts + guidance generation (Mode A + B)
+**Day 3:** Scoring + sequence optimization, including Vision V when cached results exist
+**Day 4~5:** Vision result merge + guidance/conversation context reuse (Mode A + B)
 **Day 6:** Off-route detection + rerouting
 **Day 7~8:** Endpoint integration + full testing
 
@@ -129,7 +130,7 @@ Interface agreements (JSON shape) needed before backend integration.
 ## Frontend ↔ Backend ↔ Python Sync
 
 ```
-  [Frontend]  F1 (mock)  →  F2 (server + WS)  →  F3 (polish)
+  [Frontend]  F1 (contract)  →  F2 (server + WS)  →  F3 (polish)
   [Backend]   B1~B2 (skeleton+route) → B3 (REST) → B4 (WebSocket) → B5 (test)
   [Python]    Day 1~5 (dp-pipeline)  → Day 6 (deviation) → Day 7~8 (integration)
 ```
@@ -144,10 +145,9 @@ Interface agreements (JSON shape) needed before backend integration.
 
 ### Server Delay Contingency
 
-- Mock mode flag (`USE_MOCK=true`) enables demo without server
-- Frontend self-calculates DP proximity for TTS/haptic trigger as fallback
-- Spring Boot can mock Python responses if Python services not ready
-- Demo can show full flow using mock data even if server is unavailable
+- Frontend surfaces route creation and tracking errors without creating success states
+- Spring Boot maps Python service failures to explicit API errors
+- Python keeps POI/facility/OSM guidance when Vision results are absent
 
 ---
 
@@ -155,7 +155,7 @@ Interface agreements (JSON shape) needed before backend integration.
 - One feature at a time
 - Each feature must work before moving to next
 - Test after each step (frontend: real device, backend: Postman, Python: pytest)
-- Real API integration comes last
+- Verify with real API responses before considering the flow complete
 
 ## Change Rules
 - Do not restructure project without explicit request
@@ -170,7 +170,7 @@ Interface agreements (JSON shape) needed before backend integration.
 
 ## Absolute Rules
 - MVP only. No future features.
-- Mock first. Real API later.
+- API contract first. Real route data for verification.
 - Working > perfect.
 - Simple > clever.
 - API spec is the source of truth.

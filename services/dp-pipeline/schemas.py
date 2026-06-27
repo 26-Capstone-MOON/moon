@@ -6,6 +6,8 @@ from typing import Optional, Union
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from vision_schemas import VisionAnalysisData
+
 
 # ---------------------------------------------------------------------------
 # Shared value objects
@@ -50,10 +52,11 @@ class SelectedLandmark(BaseModel):
     position: str  # LEFT | RIGHT | FRONT
     distance: float
     score: float
-    match_status: str  # MATCHED | POI_ONLY | VISION_ONLY
+    match_status: str  # Production currently emits POI_ONLY; MATCHED/VISION_ONLY are reserved for future Vision integration.
     is_open: bool = True
     location: Optional[Location] = None  # POI coordinates (from Kakao API)
-    appearance: Optional[str] = None  # Visual description for LLM context (Mode B chat)
+    appearance: Optional[str] = None  # Reserved for dev fixtures or future Vision integration; production pipeline does not generate it.
+    visual_context: Optional[VisionAnalysisData] = None
     position_confirm: Optional[str] = None  # Deterministic answer for Mode B position-confirm questions
 
 
@@ -175,7 +178,14 @@ class ConversationResponse(BaseModel):
 class ApiResponse(BaseModel):
     status: str = "SUCCESS"  # SUCCESS | ERROR
     data: Optional[
-        Union[dict, list, RouteResponse, DeviationResponse, ConversationResponse]
+        Union[
+            dict,
+            list,
+            RouteResponse,
+            DeviationResponse,
+            ConversationResponse,
+            VisionAnalysisData,
+        ]
     ] = None
     error: Optional[dict] = None
 

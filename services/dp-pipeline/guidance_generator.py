@@ -157,8 +157,8 @@ def _landmark_with_env(
 
     Args:
         landmark: selected landmark (may be None).
-        match_status: MATCHED / POI_ONLY / VISION_ONLY / None.
-        environment_desc: Vision environment description.
+        match_status: POI_ONLY in production; MATCHED/VISION_ONLY are reserved for future Vision integration.
+        environment_desc: Optional environment description reserved for future Vision integration.
         distance_from_start: for distance fallback.
         next_dp_distance: distance to next DP (for fallback text).
 
@@ -182,6 +182,12 @@ def _landmark_with_env(
         if environment_desc:
             return environment_desc
         return name
+    return name
+
+
+def _name_with_optional_appearance(name: str, environment_desc: str | None) -> str:
+    if environment_desc:
+        return f"{environment_desc} {name}"
     return name
 
 
@@ -272,7 +278,10 @@ def _generate_direction_change(
 
     # primary
     if has_landmark:
-        name = landmark.poi.place_name
+        name = _name_with_optional_appearance(
+            landmark.poi.place_name,
+            environment_desc,
+        )
         name_with_particle = _particle(name, "을", "를")
         primary = f"{name_with_particle} 끼고 {action_text}하세요."
     else:
@@ -282,7 +291,10 @@ def _generate_direction_change(
 
     # pre_alert
     if has_landmark:
-        name = landmark.poi.place_name
+        name = _name_with_optional_appearance(
+            landmark.poi.place_name,
+            environment_desc,
+        )
         name_with_particle = _particle(name, "이", "가")
         if prev_landmark_name:
             pre_alert = (
@@ -335,8 +347,16 @@ def _generate_crosswalk(
     )
     has_after = after_landmark is not None and after_match_status is not None
 
-    before_name = landmark.poi.place_name if has_before else None
-    after_name = after_landmark.poi.place_name if has_after else None
+    before_name = (
+        _name_with_optional_appearance(landmark.poi.place_name, environment_desc)
+        if has_before
+        else None
+    )
+    after_name = (
+        _name_with_optional_appearance(after_landmark.poi.place_name, after_environment_desc)
+        if has_after
+        else None
+    )
 
     # pre_alert
     if before_name:
@@ -391,7 +411,10 @@ def _generate_vertical_move(
     )
 
     if has_landmark:
-        name = landmark.poi.place_name
+        name = _name_with_optional_appearance(
+            landmark.poi.place_name,
+            environment_desc,
+        )
         name_with_particle = _particle(name, "을", "를")
         primary = (
             f"{name_with_particle} 지나 바로 "
@@ -415,7 +438,7 @@ def _generate_virtual(
     Args:
         landmark: selected landmark.
         match_status: cross-validation result.
-        environment_desc: Vision environment description.
+        environment_desc: Optional environment description reserved for future Vision integration.
         distance_from_start: distance from route start.
         next_dp_distance: distance to next DP.
 
@@ -472,8 +495,8 @@ def generate_guidance(
         turn_type: Tmap turnType code (None for VIRTUAL).
         selected_landmark: Best landmark from sequence optimizer.
         match_status: Cross-validation result.
-        environment_desc: Vision environment description (Korean).
-        facility_visible: Whether facility is visible in panorama.
+        environment_desc: Optional environment description reserved for future Vision integration.
+        facility_visible: Optional future Vision visibility flag; production passes None.
         prev_landmark_name: Previous DP's landmark name.
         next_dp_distance: Distance to next DP in meters.
         dest_name: Destination name (for ARRIVAL).

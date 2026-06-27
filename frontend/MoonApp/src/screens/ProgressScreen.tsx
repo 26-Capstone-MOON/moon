@@ -13,7 +13,6 @@ import type { StackScreenProps } from '@react-navigation/stack';
 import { COLORS } from '../constants/colors';
 import { useNavigationStore } from '../stores/useNavigationStore';
 import { useRouteStore } from '../stores/useRouteStore';
-import { MOCK_ROUTE_RESPONSE } from '../mocks/mockRoute';
 import { formatDistance } from '../utils/formatDistance';
 import { formatTime } from '../utils/formatTime';
 import { buildPanoramaHtml, getPrimaryPan } from '../utils/panoramaUtils';
@@ -21,6 +20,7 @@ import type { RootStackParamList } from '../types/navigation';
 import type { DecisionPoint } from '../types/route';
 
 type Props = StackScreenProps<RootStackParamList, 'Progress'>;
+const DEFAULT_GUIDANCE = '주변을 확인하며 전방으로 계속 이동하세요.';
 
 function getDpIcon(dpType: string): string {
   switch (dpType) {
@@ -48,15 +48,16 @@ function getDpLabel(dpType: string): string {
 
 export default function ProgressScreen({ navigation, route }: Props) {
   const { dpList: paramDpList } = route.params;
-  const dpList = paramDpList.length > 0 ? paramDpList : MOCK_ROUTE_RESPONSE.decisionPoints;
 
   const currentDpIndex = useNavigationStore(s => s.currentDpIndex);
   const routeData = useRouteStore(s => s.routeData);
+  const storeDpList = useRouteStore(s => s.decisionPoints) ?? [];
+  const dpList = paramDpList.length > 0 ? paramDpList : storeDpList;
   const [expandedDpId, setExpandedDpId] = useState<string | null>(null);
   const [scrollEnabled, setScrollEnabled] = useState(true);
 
-  const totalDistance = routeData?.totalDistance ?? MOCK_ROUTE_RESPONSE.totalDistance;
-  const totalTime = routeData?.totalTime ?? MOCK_ROUTE_RESPONSE.totalTime;
+  const totalDistance = routeData?.totalDistance ?? 0;
+  const totalTime = routeData?.totalTime ?? 0;
 
   const progress = dpList.length > 0 ? ((currentDpIndex + 1) / dpList.length) * 100 : 0;
   const passedCount = currentDpIndex;
@@ -66,6 +67,28 @@ export default function ProgressScreen({ navigation, route }: Props) {
   const remainingRatio = dpList.length > 1 ? remainingCount / (dpList.length - 1) : 0;
   const distanceRemaining = Math.round(totalDistance * remainingRatio);
   const timeRemaining = Math.round(totalTime * remainingRatio);
+
+  if (dpList.length === 0 || !routeData) {
+    return (
+      <View style={styles.root}>
+        <SafeAreaView style={styles.safe}>
+          <View style={styles.header}>
+            <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
+              <Icon name="chevron-back" size={22} color={COLORS.text} />
+            </TouchableOpacity>
+            <Text style={styles.headerTitle}>경로 진행 상황</Text>
+            <View style={styles.headerRight} />
+          </View>
+          <View style={styles.emptyState}>
+            <Icon name="warning-outline" size={28} color={COLORS.subtext} />
+            <Text style={styles.emptyText}>
+              경로를 불러오지 못했습니다. 네트워크 연결 또는 서버 상태를 확인한 뒤 다시 시도하세요.
+            </Text>
+          </View>
+        </SafeAreaView>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.root}>
@@ -181,7 +204,7 @@ export default function ProgressScreen({ navigation, route }: Props) {
                         isPassed && styles.textPassedGuide,
                       ]}
                       numberOfLines={isExpanded ? undefined : 2}>
-                      {dp.guidance?.primary}
+                      {dp.guidance?.primary ?? DEFAULT_GUIDANCE}
                     </Text>
                     {dp.selectedLandmark && (
                       <View style={styles.checkpointLandmark}>
@@ -294,6 +317,19 @@ const styles = StyleSheet.create({
   },
   headerRight: {
     width: 36,
+  },
+  emptyState: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 32,
+    gap: 12,
+  },
+  emptyText: {
+    color: COLORS.subtext,
+    fontSize: 15,
+    lineHeight: 22,
+    textAlign: 'center',
   },
 
   // Summary card

@@ -67,6 +67,7 @@ S_final =    (P × h × U)  ×   D
            ├─ Intrinsic ─┤   ├ Spatial ┤
 ```
 All parameters are **multiplicative**. No additive components.
+If cached Vision salience exists for the same DP/direction/candidate, the pipeline uses `(P × h × U × V) × D`. If Vision data is absent, the base POI/facility/OSM guidance path is preserved.
 
 ### P — Category Recognition (key values)
 
@@ -126,6 +127,8 @@ Search at 50m → 0 results: 75m / 20+ results: 30m / 1~19: keep
 
 Left/right: bearing-based, recorded in `position` field. Opposite-side NOT filtered.
 
+OSM spatial elements are collected through Overpass within 80m: park, square, bridge/overpass, and subway entrance. Named or identifiable elements are normalized as `source=OSM`, merged with Kakao candidates, and scored by the existing model. Overpass timeout, error, or an empty response falls back to Kakao POI and existing Tmap facility candidates.
+
 ---
 
 ## Panorama + Vision (STEP 4)
@@ -133,8 +136,10 @@ Left/right: bearing-based, recorded in `position` field. Opposite-side NOT filte
 - Server generates `panoramaRequest` → client executes Naver Panorama API
 - All DPs (including Virtual DP): 3 directions (front + left + right)
 - turnType-based isPrimary: left turn→left, right turn→right, other→front
-- Vision validation: if turnType facility not visible in primary → distance-based fallback
-- Panorama/Vision results are used for guidance text enrichment, NOT for scoring
+- `panorama-results` merges structured Vision results into the route cache
+- Vision salience can update candidate scoring and selected landmark when recalculation is possible
+- Vision appearance and surrounding context are reused by guidance and conversational answers
+- If Vision data is absent, POI/facility/OSM guidance remains unchanged
 
 ---
 

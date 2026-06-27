@@ -148,6 +148,11 @@ tests/
 *.pyc
 __pycache__/
 
+# Python virtual environments and uv local cache
+/services/dp-pipeline/.venv/
+/services/dp-pipeline/.uv-cache/
+/services/dp-pipeline/.uv-python/
+
 # HTML artifacts
 *.html
 

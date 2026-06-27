@@ -16,8 +16,8 @@ Guidance channels: map (base layer) + spatial description + voice TTS + haptic v
 Navigation is based on **Decision Points (DP)**.
 
 At each DP, the backend:
-1. Selects the best landmark via scoring model: `S_final = (P × h × U) × D`
-2. Generates spatial description guidance per DP type
+1. Collects POI/facility/OSM context and selects the best landmark via scoring model: `(P × H × U) × D`, or `(P × H × U × V) × D` when Vision salience exists
+2. Generates spatial description guidance per DP type, enriched by Vision appearance only when available
 3. Sends complete guidance package to frontend
 
 DP types: Direction change (3-step), Crosswalk (before+after), Virtual (confirmation), Vertical move (fixed+POI).
@@ -64,7 +64,7 @@ MOON/
 
 | Layer | Owner | Role |
 |---|---|---|
-| React Native | Minwoo | UI, GPS collection, TTS/STT, Naver Panorama capture |
+| React Native | Minwoo | UI, GPS collection, TTS/STT, Naver Panorama display |
 | Spring Boot | Jihyun | REST API / WebSocket endpoints, Python service relay |
 | Python dp-pipeline | Hyewon | Route creation, DP extraction, POI, scoring, guidance generation |
 | Python deviation | Hyewon | Off-route detection (speed→distance→duration→continuity) |
@@ -104,7 +104,7 @@ cd services/deviation && uvicorn main:app --port 8001
 - Show map with route polyline
 - Connect WebSocket `/tracking` and send GPS every 1s
 - Process server trigger responses (PRE_ALERT, ARRIVAL, DEVIATION_WARNING, etc.)
-- Upload panorama Vision results via `POST /route/{routeId}/panorama-results`
+- Submit structured Vision results via `POST /route/{routeId}/panorama-results`
 
 ### MUST NOT:
 - Calculate routes, select landmarks, perform scoring, generate guidance text
@@ -114,14 +114,14 @@ cd services/deviation && uvicorn main:app --port 8001
 
 ## 5. Backend Pipeline (Reference Only)
 
-Python dp-pipeline executes STEP 1~6 (DP extraction → Virtual DP → POI → Panorama → Scoring + Sequence optimization → Guidance → Cache). See `domain.md` for full details.
+Python dp-pipeline executes route creation as Tmap route → DP/Virtual DP → Kakao POI/Tmap facility/OSM collection → scoring + sequence optimization → guidance → route cache. OSM collection uses Overpass for parks, squares, bridges/overpasses, and subway entrances; timeout, error, or an empty response falls back to the existing candidates. Vision results are reused when present and never required for base guidance.
 
 ---
 
 ## 6. Navigation Flow (API-driven)
 ```
 1. POST /route → Spring Boot → Python dp-pipeline → RouteResponse
-2. Client executes panorama → Vision → POST /route/{routeId}/panorama-results
+2. Structured Vision results can be uploaded with POST /route/{routeId}/panorama-results; the server merges them into route cache and recalculates scoring/guidance when possible
 3. Navigation loop (WebSocket):
    - Client connects WebSocket /tracking
    - Client sends GPS every 1s as JSON
@@ -199,7 +199,7 @@ For full RouteResponse and ConversationResponse types, see API spec document.
 |---|---|---|
 | `POST` | `/route` | Create route (pipeline STEP 1~6) |
 | `GET` | `/route/{routeId}` | Get cached route |
-| `POST` | `/route/{routeId}/panorama-results` | Upload Vision results |
+| `POST` | `/route/{routeId}/panorama-results` | Merge Vision results into route cache |
 | `POST` | `/route/{routeId}/reroute` | Re-route |
 | `POST` | `/route/{routeId}/conversation` | Mode B conversational |
 
@@ -226,7 +226,7 @@ See `workflow.md` for phase details (F1~F3 frontend, B1~B5 backend, Python Day 1
 All detailed rules are in:
 - `.claude/rules/coding.md` — code conventions (frontend + backend + Python)
 - `.claude/rules/domain.md` — scoring, DP types, off-route detection
-- `.claude/rules/output.md` — code output format, mock data, fallback
+- `.claude/rules/output.md` — code output format, route data, fallback
 - `.claude/rules/workflow.md` — phases, priorities, sync timeline
 
 **These rules override general preferences.**

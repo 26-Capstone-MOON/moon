@@ -18,6 +18,9 @@ from constants import (
 )
 from places_service import poi_identity_key
 from poi_service import PoiResult
+from vision_cache import find_visual_context_for_poi, visual_v_score
+from vision_schemas import VisionAnalysisData
+from schemas import Location
 
 # ---------------------------------------------------------------------------
 # Sub-classification overrides (keyword in category_name)
@@ -104,6 +107,8 @@ class ScoredPoi:
     u: float         # Uniqueness
     d: float         # D = 1 - d / MD
     s_final: float   # (P × h × U) × D
+    v: float | None = None  # Vision V; None keeps the legacy formula.
+    visual_context: VisionAnalysisData | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -230,6 +235,9 @@ def score_poi(
     poi: PoiResult,
     all_pois: list[PoiResult],
     is_open_status: str = "UNKNOWN",
+    route_id: str | None = None,
+    dp_id: str | None = None,
+    dp_location: Location | tuple[float, float] | None = None,
 ) -> ScoredPoi:
     """Compute S_final = (P × h × U) × D for a single POI.
 
@@ -244,7 +252,13 @@ def score_poi(
     p_h = compute_p_h(poi, is_open_status)
     u = compute_uniqueness(poi, all_pois)
     d = compute_d(poi.distance)
-    s_final = p_h * u * d
+    visual_context = (
+        find_visual_context_for_poi(route_id, dp_id, poi, dp_location)
+        if route_id and dp_id
+        else None
+    )
+    v = visual_v_score(visual_context)
+    s_final = p_h * u * d if v is None else p_h * u * v * d
 
     return ScoredPoi(
         poi=poi,
@@ -252,12 +266,17 @@ def score_poi(
         u=u,
         d=d,
         s_final=s_final,
+        v=v,
+        visual_context=visual_context,
     )
 
 
 def rank_pois(
     pois: list[PoiResult],
     is_open_statuses: dict[str, str] | None = None,
+    route_id: str | None = None,
+    dp_id: str | None = None,
+    dp_location: Location | tuple[float, float] | None = None,
 ) -> list[ScoredPoi]:
     """Score and rank all POIs for a single DP.
 
@@ -281,6 +300,9 @@ def rank_pois(
                 poi_identity_key(poi),
                 open_map.get(poi.place_name, "UNKNOWN"),
             ),
+            route_id=route_id,
+            dp_id=dp_id,
+            dp_location=dp_location,
         )
         for poi in pois
     ]
@@ -292,6 +314,9 @@ def rank_pois(
 def select_landmark(
     pois: list[PoiResult],
     is_open_statuses: dict[str, str] | None = None,
+    route_id: str | None = None,
+    dp_id: str | None = None,
+    dp_location: Location | tuple[float, float] | None = None,
 ) -> ScoredPoi | None:
     """Select the best landmark for a DP.
 
@@ -302,5 +327,11 @@ def select_landmark(
     Returns:
         Best ScoredPoi, or None if no POIs.
     """
-    ranked = rank_pois(pois, is_open_statuses)
+    ranked = rank_pois(
+        pois,
+        is_open_statuses,
+        route_id=route_id,
+        dp_id=dp_id,
+        dp_location=dp_location,
+    )
     return ranked[0] if ranked else None

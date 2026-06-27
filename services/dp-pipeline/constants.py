@@ -73,7 +73,7 @@ LEFT_PRIMARY_TURN_TYPES: set[int] = {12, 16, 17, 212, 214, 215}
 RIGHT_PRIMARY_TURN_TYPES: set[int] = {13, 18, 19, 213, 216, 217}
 
 # ---------------------------------------------------------------------------
-# Facility type mapping (turnType → facility name for Vision verification)
+# Facility type mapping (turnType → facility name for guidance and future Vision extension)
 # ---------------------------------------------------------------------------
 
 FACILITY_TURN_TYPES: dict[int, str] = {
@@ -123,6 +123,11 @@ CATEGORY_P_VALUES: dict[str, float] = {
     "AC5": 0.3,   # Academy
     "AD5": 0.25,  # Accommodation
     "PK6": 0.2,   # Parking lot
+    # OSM spatial elements. Values follow the closest existing landmark type.
+    "OSM_PARK": 0.85,              # Kakao AT4 > park
+    "OSM_SQUARE": 0.55,            # public/cultural open space
+    "OSM_BRIDGE": 0.6,             # pedestrian overpass / bridge facility
+    "OSM_SUBWAY_ENTRANCE": 0.8,    # Kakao SW8 subway station
 }
 
 DEFAULT_P_VALUE: float = 0.3

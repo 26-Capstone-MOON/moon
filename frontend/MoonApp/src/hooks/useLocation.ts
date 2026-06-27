@@ -46,7 +46,6 @@ export function useLocation(options?: UseLocationOptions): UseLocationReturn {
   const [isTracking, setIsTracking] = useState(false);
   const watchId = useRef<number | null>(null);
 
-  // Store latest options in ref to avoid re-creating callbacks
   const optsRef = useRef({ enableHighAccuracy, interval, minAccuracy });
   optsRef.current = { enableHighAccuracy, interval, minAccuracy };
 
@@ -61,7 +60,7 @@ export function useLocation(options?: UseLocationOptions): UseLocationReturn {
   const startTracking = useCallback(async () => {
     const hasPermission = await requestLocationPermission();
     if (!hasPermission) {
-      setError('위치 권한이 필요합니다');
+      setError('현재 위치 권한이 필요합니다. 설정에서 위치 권한을 허용해 주세요.');
       return;
     }
 
@@ -84,7 +83,8 @@ export function useLocation(options?: UseLocationOptions): UseLocationReturn {
         });
       },
       (err: GeoError) => {
-        setError(err.message);
+        console.error('[Location] GPS watch failed:', err);
+        setError('현재 위치를 확인하지 못했습니다. 잠시 후 다시 시도하세요.');
       },
       {
         enableHighAccuracy: opts.enableHighAccuracy,

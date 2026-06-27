@@ -26,6 +26,7 @@ import { formatDistance } from '../utils/formatDistance';
 import { formatTime } from '../utils/formatTime';
 
 type Props = StackScreenProps<RootStackParamList, 'RouteConfirm'>;
+const DEFAULT_GUIDANCE = '주변을 확인하며 전방으로 계속 이동하세요.';
 
 /** Convert routeLineString to Location[].
  *  Handles both Python format [{latitude, longitude}] and GeoJSON {coordinates: [[lng, lat]]}. */
@@ -83,7 +84,7 @@ export default function RouteConfirmScreen({ navigation, route }: Props) {
   const handleStart = async () => {
     const hasPermission = await requestLocationPermission();
     if (!hasPermission) {
-      setToastMessage('위치 권한이 필요합니다');
+      setToastMessage('현재 위치 권한이 필요합니다. 설정에서 위치 권한을 허용해 주세요.');
       setToastVisible(true);
       return;
     }
@@ -186,7 +187,7 @@ export default function RouteConfirmScreen({ navigation, route }: Props) {
               <TimelineNode
                 key={dp.dpId}
                 number={index + 1}
-                label={dp.guidance?.primary || '안내 정보 로딩 중...'}
+                label={dp.guidance?.primary || DEFAULT_GUIDANCE}
                 sub={dp.selectedLandmark?.name || ''}
                 showLine={index < decisionPoints.length - 1}
               />

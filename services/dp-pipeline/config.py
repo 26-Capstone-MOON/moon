@@ -18,6 +18,9 @@ def _env_files() -> tuple[str, ...]:
 class Settings(BaseSettings):
     """Load API keys and service settings from .env file."""
 
+    vision_enabled: bool = False
+    vision_model: str = "gpt-4o"
+
     tmap_api_key: str = ""
     kakao_api_key: str = ""
     naver_client_id: str = ""
@@ -31,8 +34,3 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
-
-# ---------------------------------------------------------------------------
-# Mock guidance toggle — overwrite pipeline guidance with hand-crafted demo text
-# ---------------------------------------------------------------------------
-MOCK_GUIDANCE = True

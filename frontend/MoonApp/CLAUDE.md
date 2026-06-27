@@ -23,7 +23,6 @@ src/
   stores/        Zustand stores (routeStore, navigationStore, settingsStore)
   services/      External integrations (apiClient, ttsService, hapticService, locationService)
   types/         TypeScript type definitions matching API spec
-  mocks/         Mock data for development (toggled by USE_MOCK flag)
   utils/         Helper functions
   constants/     App-wide constants
 ```
@@ -34,7 +33,7 @@ src/
 - Hooks: camelCase with `use` prefix (`useLocation.ts`, `useWebSocket.ts`)
 - Services: camelCase (`ttsService.ts`, `hapticService.ts`)
 - Types/Interfaces: PascalCase (`RouteResponse`, `DecisionPoint`)
-- Constants: UPPER_SNAKE_CASE (`USE_MOCK`, `API_BASE_URL`)
+- Constants: UPPER_SNAKE_CASE (`API_BASE_URL`)
 - Files: match their default export name
 
 ## State Management
@@ -52,7 +51,6 @@ Keep stores independent. Minimize cross-store dependencies.
 ### REST (via apiClient)
 - `POST /api/route` — create route
 - `GET /api/route/{routeId}` — get cached route
-- `POST /api/route/{routeId}/panorama-results` — upload vision results
 - `POST /api/route/{routeId}/reroute` — reroute request
 - `POST /api/route/{routeId}/conversation` — chat mode (Mode B)
 
@@ -61,10 +59,11 @@ Keep stores independent. Minimize cross-store dependencies.
 - Client sends GPS data every second
 - Server responds with navigation state, triggers, guidance
 
-### Mock/Real Toggle
-- `USE_MOCK=true` returns data from `mocks/` folder
-- `USE_MOCK=false` calls the real Spring Boot server
-- All API calls go through `services/apiClient.ts`
+### Data Policy
+- Production code calls the real Spring Boot server only.
+- Landmark candidates are selected server-side from merged Kakao POI, Tmap facility, and OSM spatial-element candidates.
+- Test route fixtures, when needed, live outside `src/` and are not imported by production code.
+- Route creation failures must surface as errors rather than successful navigation states.
 
 ### Response Format
 - Server returns snake_case (`route_id`, `total_distance`)
@@ -106,7 +105,7 @@ Home -> Search -> RouteConfirm -> Navigation -> Progress
 ### apiClient
 - Axios-based HTTP client with shared config
 - Intercepts errors and maps to user-friendly messages
-- Switches between mock and real server via USE_MOCK flag
+- Calls the real Spring Boot server; production code does not import test fixtures
 
 ## Component Guidelines
 
@@ -133,24 +132,25 @@ Home -> Search -> RouteConfirm -> Navigation -> Progress
 
 ## Current Status
 
-### Done (F1 ~90%)
-- Mock data + type definitions
+### Done
+- Type definitions
 - Naver Map + Polyline + DP markers
 - GPS watchPosition (useLocation hook)
 - TTS trigger + haptic feedback
 - 3 Zustand stores
 - 5 screen UIs
-- API client + USE_MOCK flag
+- Real backend API connection
+- GPS deviation detection + rerouting UI path
+- Chat mode (Mode B)
+- Naver Panorama display
 - Design updates
 
-### Not Started (F2 — starts when backend is ready)
-- Real server connection (USE_MOCK=false)
-- WebSocket /tracking integration
-- DeviationScreen + rerouting UI
-- Chat mode (Mode B) — ChatBubble + VoiceButton wiring
-- locationService implementation
+### Server-Driven Vision Context
+- The app displays server-provided panorama data and guidance.
+- Vision results, when available on the server, are merged into route cache for scoring, guidance appearance, and conversational context.
+- Surrounding descriptions use server-provided route context.
 
-### Later (F3 — polish)
+### Later
 - Error handling + retry logic
 - Arrival screen
 - WebSocket auto-reconnect
@@ -179,5 +179,6 @@ npx eslint src/                 # lint source files
 - Use `any` type
 - Put business logic in components — use hooks or services
 - Create new state management patterns — use Zustand
-- Modify mock data structure without updating corresponding types
+- Import test fixtures from production `src/` code
+- Present client-side Vision analysis as implemented
 - Skip TypeScript types for "quick fixes"
