@@ -2,7 +2,6 @@
 
 사용자 질문에 대해 캐시된 경로 컨텍스트를 바탕으로 한국어 응답을 생성한다.
 의도(intent) 분류는 별도로 두지 않고 시스템 프롬프트의 유형 가이드만으로 분기한다.
-사양: services/dp-pipeline/.claude/rules/conversation.md
 """
 
 from __future__ import annotations
